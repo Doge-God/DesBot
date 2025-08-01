@@ -19,6 +19,7 @@ def main():
     ser = open_serial_port(port, baudrate, timeout)
     if not ser:
         return
+    ser.read_all()
 
     print("Type commands to send over serial. Type 'exit' to quit.")
     

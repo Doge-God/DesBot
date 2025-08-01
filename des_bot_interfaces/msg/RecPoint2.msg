@@ -1,0 +1,2 @@
+des_bot_interfaces/Vec2 location
+float32 score

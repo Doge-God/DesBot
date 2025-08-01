@@ -1,0 +1,1 @@
+des_bot_interfaces/RecPoint2[] points

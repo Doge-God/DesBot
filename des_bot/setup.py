@@ -11,7 +11,9 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+    ],
     zip_safe=True,
     maintainer='fz',
     maintainer_email='futianzhou@hotmail.com',
@@ -21,6 +23,7 @@ setup(
     entry_points={
         'console_scripts': [
             'vision_pub = des_bot.vision_pub:main',
+            'naive_track = des_bot.naive_vision_track:main',
             'test_sub = des_bot.test_sub:main'
         ],
     },

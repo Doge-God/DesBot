@@ -24,6 +24,8 @@ setup(
         'console_scripts': [
             'vision_pub = des_bot.vision_pub:main',
             'naive_track = des_bot.naive_vision_track:main',
+            'naive_face = des_bot.face_controller:main',
+
             'test_sub = des_bot.test_sub:main'
         ],
     },

@@ -13,6 +13,12 @@ def generate_launch_description():
             package='des_bot',
             namespace='des_bot_0',
             executable='naive_track',
-            name='naive_track'
+            name='track'
+        ),
+        Node(
+            package='des_bot',
+            namespace='des_bot_0',
+            executable='naive_face',
+            name='face'
         )
     ])

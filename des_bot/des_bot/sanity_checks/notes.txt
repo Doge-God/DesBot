@@ -1,0 +1,3 @@
+sudo apt-get install python3-pil libjpeg-dev zlib1g-dev libfreetype6-dev liblcms2-dev libopenjp2-7 -y
+
+sudo usermod -a -G spi,gpio,i2c pi

@@ -44,11 +44,11 @@ class FaceController(Node):
 
         with canvas(self.device_0) as draw:
             self.device_0.backlight(False)
-            draw_centered_ellipse(draw, x, y, 40, 70, 'cyan')
+            draw_centered_ellipse(draw, x, y, 40, 70, 'orange')
         
         with canvas(self.device_1) as draw:
             self.device_1.backlight(False)
-            draw_centered_ellipse(draw, x, y, 40, 70, 'cyan')
+            draw_centered_ellipse(draw, x, y, 40, 70, 'orange')
 
 def main(args=None):
     rclpy.init(args=args)

@@ -11,7 +11,7 @@ class VisionResultPublisher(Node):
 
 
         # Declare max rate parameter
-        self.declare_parameter('max_publish_rate', 30.0)  # Hz
+        self.declare_parameter('max_publish_rate', 40.0)  # Hz
         self.declare_parameter('screen_w', 640)  # Hz
         self.declare_parameter('screen_h', 480)  # Hz
 

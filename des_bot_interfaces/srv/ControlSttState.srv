@@ -1,0 +1,3 @@
+bool target_state
+---
+bool is_ready

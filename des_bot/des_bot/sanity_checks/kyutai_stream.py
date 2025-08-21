@@ -36,7 +36,7 @@ async def receive_messages(websocket, show_vad: bool = False):
             # The Step message only gets sent if the model has semantic VAD available
             if data["type"] == "Step" and show_vad:
                 pause_prediction = data["prs"][PAUSE_PREDICTION_HEAD_INDEX]
-                if pause_prediction > 0.8 and speech_started:
+                if pause_prediction > 0.7 and speech_started:
                     print("| ", end="", flush=True)
                     speech_started = False
 

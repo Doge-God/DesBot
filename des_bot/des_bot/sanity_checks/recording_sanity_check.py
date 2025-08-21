@@ -7,9 +7,10 @@ RESPEAKER_CHANNELS = 1 # change base on firmwares, 1_channel_firmware.bin as 1 o
 RESPEAKER_WIDTH = 2
 # run getDeviceInfo.py to get index
 RESPEAKER_INDEX = 3  # refer to input device id
-CHUNK = 1024
+CHUNK = 1920
 RECORD_SECONDS = 3
 WAVE_OUTPUT_FILENAME = "output.wav"
+import noisereduce as nr
 
 p = pyaudio.PyAudio()
 

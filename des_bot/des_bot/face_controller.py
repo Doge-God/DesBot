@@ -1,14 +1,17 @@
+import threading
 import rclpy
 from rclpy.node import Node
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from des_bot_interfaces.msg import RecFrameResult2
 
 from luma.core.interface.serial import spi
 from luma.core.render import canvas
 from luma.lcd.device import st7735
 from PIL.ImageDraw import ImageDraw
+from queue import Queue, Full
 
-def draw_centered_ellipse(draw:ImageDraw,x,y,w,h,fill):
-    draw.rounded_rectangle([(x-w/2, y-h/2), (x+w/2, y+h/2)],15, fill= fill)
+def draw_centered_ellipse(draw:ImageDraw,x,y,w,h,fill=None,outline=None):
+    draw.rounded_rectangle([(x-w/2, y-h/2), (x+w/2, y+h/2)],15, fill= fill, outline=outline,width=3)
 
 class FaceController(Node):
 
@@ -21,18 +24,79 @@ class FaceController(Node):
         self.device_0 = st7735(serial_0, rotate=1, gpio_LIGHT=26)
         self.device_1 = st7735(serial_1, rotate=1, gpio_LIGHT=25)
 
+        face_update_callback_group = MutuallyExclusiveCallbackGroup()
+
         self.subscription = self.create_subscription(
             RecFrameResult2,
             'rec_frame_result',
             self.rec_frame_callback,
-            10
+            10,
+            callback_group=face_update_callback_group
         )
 
+        self.face_udate_timer = self.create_timer(
+            0.0368, 
+            self.update_face_callback,
+            face_update_callback_group)
+
+        self.rec_queue = Queue(5)
+        # [[self.__lin_map(0, -1,1, 128-20, 20),self.__lin_map(0, -1,1, 35,160-35)]]
+        self.temp_eye_pos_lock = threading.Lock()
+
+        self.temp_eye_pos = [self.__lin_map(0, -1,1, 128-20, 20),self.__lin_map(0, -1,1, 35,160-35)]
 
     def __lin_map(self, x, in_min=-1, in_max=1, out_min=0, out_max=160):
         return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
-    
+    def update_face_callback(self):
+        if self.rec_queue.qsize() > 1:
+            point = self.rec_queue.get()
+            x = point[0]
+            y = point[1]
+
+            with canvas(self.device_0) as draw:
+                self.device_0.backlight(False)
+                draw_centered_ellipse(draw, x, y, 40, 70, 'orange')
+            
+            with canvas(self.device_1) as draw:
+                self.device_1.backlight(False)
+                draw_centered_ellipse(draw, x, y, 40, 70, 'orange')
+
+
+        elif self.rec_queue.qsize() == 1:
+
+            last_pos = self.rec_queue.get()
+
+            with self.temp_eye_pos_lock:
+                self.temp_eye_pos = last_pos
+
+            x = self.temp_eye_pos[0]
+            y = self.temp_eye_pos[1]
+
+            with canvas(self.device_0) as draw:
+                self.device_0.backlight(False)
+                draw_centered_ellipse(draw, x, y, 40, 70, fill='orange')
+            
+            with canvas(self.device_1) as draw:
+                self.device_1.backlight(False)
+                draw_centered_ellipse(draw, x, y, 40, 70, fill='orange')
+        
+        else:
+            x = self.temp_eye_pos[0]
+            y = self.temp_eye_pos[1]
+
+            with canvas(self.device_0) as draw:
+                self.device_0.backlight(False)
+                draw_centered_ellipse(draw, x, y, 40, 70, fill=None, outline='orange')
+            
+            with canvas(self.device_1) as draw:
+                self.device_1.backlight(False)
+                draw_centered_ellipse(draw, x, y, 40, 70, fill=None, outline='orange')
+        
+
+
+            
+
     def rec_frame_callback(self, msg):
         if not msg.points:
             return
@@ -42,18 +106,17 @@ class FaceController(Node):
         x = self.__lin_map(target.x, -1,1, 128-20, 20)
         y = self.__lin_map(target.y, -1,1, 35,160-35)
 
-        with canvas(self.device_0) as draw:
-            self.device_0.backlight(False)
-            draw_centered_ellipse(draw, x, y, 40, 70, 'orange')
+        try:
+            self.rec_queue.put_nowait([x,y])
+        except Full:
+            pass
+
         
-        with canvas(self.device_1) as draw:
-            self.device_1.backlight(False)
-            draw_centered_ellipse(draw, x, y, 40, 70, 'orange')
 
 def main(args=None):
     rclpy.init(args=args)
     node = FaceController()
     rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    # node.destroy_node()
+    # rclpy.shutdown()
 

@@ -2,7 +2,6 @@ import rclpy
 from rclpy.node import Node
 import serial
 import threading
-
 from des_bot_interfaces.msg import RecFrameResult2, RecPoint2, Vec2
 
 class VisionResultPublisher(Node):

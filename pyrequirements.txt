@@ -11,3 +11,6 @@ spidev==3.7
 
 pyusb
 click
+baml-py
+pydantic
+python-dotenv

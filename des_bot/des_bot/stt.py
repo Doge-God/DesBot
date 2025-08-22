@@ -9,6 +9,7 @@ import sounddevice as sd
 import rclpy
 from rclpy.node import Node
 from des_bot_interfaces.srv import ControlSttState
+from .utils.exponential_moving_avg import ExponentialMovingAverage
 
 
 class ControlSttStateService(Node):
@@ -32,15 +33,29 @@ class ControlSttStateService(Node):
             self.service_callback
         )
 
+        self.get_clock().now().nanoseconds
+
         self.streaming_thread = None
         self.stream_task = None
         self.send_task = None
         self.receive_task = None
         self.ready_event = threading.Event()
-        self.recognized_utterances = []
+        
+
+
+        self.FRAME_TIME_SEC = 1920/24000
+        self.STEPS_TO_WAIT = 12 #skip ~1s for pause prediction to warm up
 
         self.get_logger().info('ControlSttState service is ready.')
 
+        self.get_clock()
+
+    def __create_new_pause_predictor(self):
+        return ExponentialMovingAverage(
+            attack_time=0.01, release_time=0.01, initial_value=1.0
+        )
+
+ 
 
     def service_callback(self, request, response):
         """
@@ -66,7 +81,7 @@ class ControlSttStateService(Node):
                 response.is_ready = False
                 self.ready_event.clear()
             
-        else:
+        else: # request to stop stt
             if self.send_task:
                 self.send_task.cancel()
             if self.receive_task:

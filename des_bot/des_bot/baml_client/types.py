@@ -41,14 +41,19 @@ def all_succeeded(checks: typing.Dict[CheckName, Check]) -> bool:
 # #########################################################################
 
 # #########################################################################
-# Generated classes (4)
+# Generated classes (5)
 # #########################################################################
 
 class Message(BaseModel):
     role: str
     content: str
 
+class QueryPastConversationTool(BaseModel):
+    tool_name: typing_extensions.Literal['search_past_conversation']
+    search_phrases: typing.List[str]
+
 class ReplyTool(BaseModel):
+    tool_name: typing_extensions.Literal['reply']
     response: str
 
 class Resume(BaseModel):
@@ -58,8 +63,8 @@ class Resume(BaseModel):
     skills: typing.List[str]
 
 class StopTool(BaseModel):
-    message: str
-    action: typing_extensions.Literal['stop']
+    tool_name: typing_extensions.Literal['stop']
+    parting_message: str
 
 # #########################################################################
 # Generated type aliases (0)

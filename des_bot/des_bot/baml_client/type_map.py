@@ -19,6 +19,9 @@ type_map = {
     "types.Message": types.Message,
     "stream_types.Message": stream_types.Message,
 
+    "types.QueryPastConversationTool": types.QueryPastConversationTool,
+    "stream_types.QueryPastConversationTool": stream_types.QueryPastConversationTool,
+
     "types.ReplyTool": types.ReplyTool,
     "stream_types.ReplyTool": stream_types.ReplyTool,
 

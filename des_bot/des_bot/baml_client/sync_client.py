@@ -85,6 +85,13 @@ class BamlSyncClient:
     def parse_stream(self):
       return self.__llm_stream_parser
     
+    def DetectTranscriptionEnd(self, transcription: str,
+        baml_options: BamlCallOptions = {},
+    ) -> bool:
+        result = self.__options.merge_options(baml_options).call_function_sync(function_name="DetectTranscriptionEnd", args={
+            "transcription": transcription,
+        })
+        return typing.cast(bool, result.cast_to(types, types, stream_types, False, __runtime__))
     def ExtractResume(self, resume: str,
         baml_options: BamlCallOptions = {},
     ) -> types.Resume:
@@ -108,6 +115,18 @@ class BamlStreamClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    def DetectTranscriptionEnd(self, transcription: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlSyncStream[bool, bool]:
+        ctx, result = self.__options.merge_options(baml_options).create_sync_stream(function_name="DetectTranscriptionEnd", args={
+            "transcription": transcription,
+        })
+        return baml_py.BamlSyncStream[bool, bool](
+          result,
+          lambda x: typing.cast(bool, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(bool, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
     def ExtractResume(self, resume: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlSyncStream[stream_types.Resume, types.Resume]:
@@ -140,6 +159,13 @@ class BamlHttpRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    def DetectTranscriptionEnd(self, transcription: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="DetectTranscriptionEnd", args={
+            "transcription": transcription,
+        }, mode="request")
+        return result
     def ExtractResume(self, resume: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -162,6 +188,13 @@ class BamlHttpStreamRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    def DetectTranscriptionEnd(self, transcription: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="DetectTranscriptionEnd", args={
+            "transcription": transcription,
+        }, mode="stream")
+        return result
     def ExtractResume(self, resume: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:

@@ -22,6 +22,12 @@ class LlmResponseParser:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    def DetectTranscriptionEnd(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> bool:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="DetectTranscriptionEnd", llm_response=llm_response, mode="request")
+        return typing.cast(bool, result)
+
     def ExtractResume(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> types.Resume:
@@ -41,6 +47,12 @@ class LlmStreamParser:
 
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
+
+    def DetectTranscriptionEnd(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> bool:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="DetectTranscriptionEnd", llm_response=llm_response, mode="stream")
+        return typing.cast(bool, result)
 
     def ExtractResume(
         self, llm_response: str, baml_options: BamlCallOptions = {},

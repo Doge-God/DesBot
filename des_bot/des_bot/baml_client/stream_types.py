@@ -23,14 +23,19 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
     value: StreamStateValueT
     state: typing_extensions.Literal["Pending", "Incomplete", "Complete"]
 # #########################################################################
-# Generated classes (4)
+# Generated classes (5)
 # #########################################################################
 
 class Message(BaseModel):
     role: typing.Optional[str] = None
     content: typing.Optional[str] = None
 
+class QueryPastConversationTool(BaseModel):
+    tool_name: typing.Optional[str] = None
+    search_phrases: typing.List[str]
+
 class ReplyTool(BaseModel):
+    tool_name: typing.Optional[str] = None
     response: typing.Optional[str] = None
 
 class Resume(BaseModel):
@@ -40,8 +45,8 @@ class Resume(BaseModel):
     skills: typing.List[str]
 
 class StopTool(BaseModel):
-    message: typing.Optional[str] = None
-    action: typing.Optional[str] = None
+    tool_name: typing.Optional[str] = None
+    parting_message: typing.Optional[str] = None
 
 # #########################################################################
 # Generated type aliases (0)

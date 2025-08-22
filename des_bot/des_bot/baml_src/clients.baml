@@ -17,6 +17,22 @@ client<llm> CustomGPT4oMini {
   }
 }
 
+client<llm> LocalMistral {
+  provider "openai-generic"
+  options {
+    base_url "http://192.168.137.63:11434/v1"
+    model "mistral-small3.2-16k"
+  }
+}
+
+client<llm> LocalGemma270m {
+  provider "openai-generic"
+  options {
+    base_url "http://192.168.137.63:11434/v1"
+    model "gemma3deterministic:270m"
+  }
+}
+
 // https://docs.boundaryml.com/docs/snippets/clients/retry
 retry_policy Constant {
   max_retries 3

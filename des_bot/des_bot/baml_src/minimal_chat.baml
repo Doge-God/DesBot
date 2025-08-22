@@ -4,20 +4,28 @@ class Message {
 }
 
 class ReplyTool {
+    tool_name "reply" @stream.done
     response string 
 }
 
 class StopTool {
-    message string @description(#"
+    tool_name "stop" @description(#"
+        when is a good time to stop the conversation
+    "#) @stream.done
+    parting_message string @description(#"
         indicate to the user that the conversation is stopping
     "#)
-    action "stop" @description(#"
-        when is a good time to stop the conversation
+}
+
+class QueryPastConversationTool {
+    tool_name "search_past_conversation" @stream.done
+    search_phrases string[] @description(#"
+        phrases to search for in the past conversation with user
     "#)
 }
 
 function MinimalChatAgent(messages: Message[]) -> (ReplyTool | StopTool) {
-    client CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI_API_KEY to use this client.
+    client LocalMistral //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI_API_KEY to use this client.
     prompt #"
         You are a minimal chat agent. You will respond to the messages provided.
         If you think the conversation should stop, return a StopTool with a message.
@@ -69,4 +77,5 @@ test StopCheck {
             }
         ]
     }
+    @@assert ( {{this.tool_name == "stop"}})
 }

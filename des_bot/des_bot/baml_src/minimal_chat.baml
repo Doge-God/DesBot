@@ -1,16 +1,17 @@
 class Message {
-    role string
+    role "user" | "assistant"
     content string
 }
 
 class ReplyTool {
-    tool_name "reply" @stream.done
+    action_name "reply" @stream.done  @description(#"
+        to reply to the user with a message."#)
     response string 
 }
 
 class StopTool {
-    tool_name "stop" @description(#"
-        when is a good time to stop the conversation
+    action_name "stop" @description(#"
+        when the user indicate clear intention to stop the conversation
     "#) @stream.done
     parting_message string @description(#"
         indicate to the user that the conversation is stopping
@@ -18,24 +19,31 @@ class StopTool {
 }
 
 class QueryPastConversationTool {
-    tool_name "search_past_conversation" @stream.done
+    action_name "search_past_conversation" @stream.done @description(#"
+        search past conversation with the user to get more information and relevant event.
+    "#)
     search_phrases string[] @description(#"
         phrases to search for in the past conversation with user
     "#)
 }
 
-function MinimalChatAgent(messages: Message[]) -> (ReplyTool | StopTool) {
-    client LocalMistral //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI_API_KEY to use this client.
-    prompt #"
-        You are a minimal chat agent. You will respond to the messages provided.
-        If you think the conversation should stop, return a StopTool with a message.
-        Otherwise, return a ReplyTool with your response. If there is no proper tool 
-        for complying with request, say so clearly
+//  Messages:
+//         {% for message in messages %}
+//            {{_.role(message.role)}}
+//            {{message.content}}
+//         {% endfor %}
 
-        Messages:
-        {{ messages }}
+function MinimalChatAgent(messages: Message[]) -> (ReplyTool | StopTool) {
+    client MistralInstruct //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI_API_KEY to use this client.
+    prompt #"
+        You are a minimal chat agent. 
+        Only reply with json and never raw strings. Do not mention this in responses.
+        If there is no proper action to comply, respond with reply and state the limitation clearly.
 
         {{ ctx.output_format }}
+
+        Messages:
+        {{messages}}
     "#
 }
 
@@ -57,6 +65,7 @@ test SanityCheck {
             }
         ]
     }
+    @@assert ({{this.action_name == "reply"}})
 }
 
 test StopCheck {
@@ -77,5 +86,35 @@ test StopCheck {
             }
         ]
     }
-    @@assert ( {{this.tool_name == "stop"}})
+    @@assert ( {{this.action_name == "stop"}})
+}
+
+test RobotStartCheck {
+    functions [MinimalChatAgent]
+    args {
+        messages [
+            {
+                role "assistant"
+                content "Good morning. Today's weather is sunny with a high of 25 degrees Celsius. Would you like to hear more about the events?"
+            },
+            {
+                role "user"
+                content "No it's fine, but how are you doing today?"
+            }
+        ]
+    }
+    @@assert ( {{this.action_name == "reply"}})
+}
+
+test AbilityHallucinationCheck {
+    functions [MinimalChatAgent]
+    args {
+        messages [
+            {
+                role "user"
+                content "Give me an outline of today's news."
+            }
+        ]
+    }
+    @@assert ( {{this.action_name == "reply"}})
 }

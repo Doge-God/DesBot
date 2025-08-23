@@ -30,6 +30,7 @@ class SttSessionKyutai:
         self.first_audio_sent_timestamp = None # NODE TIME IN NANOSEC
 
         self.current_time_sec = -delay_sec # detected current time lag behind real time
+        '''Time for confirmed text stream'''
 
         self.pause_predictor = ExponentialMovingAverage(
             attack_time=0.01, release_time=0.01, initial_value=1.0
@@ -42,7 +43,7 @@ class SttSessionKyutai:
     async def start_up(self, url, api_key='public_key'):
         '''Remember api/asr-streaming part'''
         headers = {"kyutai-api-key": api_key}
-        await self.websocket = websockets.connect(url, additional_headers=headers)
+        self.websocket = await websockets.connect(url, additional_headers=headers)
     
     async def shutdown(self):
         if self.shutdown_complete.is_set():
@@ -82,6 +83,7 @@ class SttSessionKyutai:
 
                 match stt_message:
                     case SttWordMessage():
+                        self.node_logger.info(f"word: {stt_message.text}")
                         yield stt_message
                     case SttStepMessage():
                         self.current_time_sec += self.frame_time_sec

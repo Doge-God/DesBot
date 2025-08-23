@@ -17,21 +17,22 @@ client<llm> CustomGPT4oMini {
   }
 }
 
-client<llm> LocalMistral {
+client<llm> MistralInstruct {
   provider "openai-generic"
   options {
-    base_url "http://192.168.137.63:11434/v1"
+    base_url "http://192.168.137.81:11434/v1"
+    model "mistral-small3.2:24b-instruct-2506-q4_K_M"
+  }
+}
+
+client<llm> Mistral {
+  provider "openai-generic"
+  options {
+    base_url "http://192.168.137.81:11434/v1"
     model "mistral-small3.2-16k"
   }
 }
 
-client<llm> LocalGemma270m {
-  provider "openai-generic"
-  options {
-    base_url "http://192.168.137.63:11434/v1"
-    model "gemma3deterministic:270m"
-  }
-}
 
 // https://docs.boundaryml.com/docs/snippets/clients/retry
 retry_policy Constant {

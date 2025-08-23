@@ -27,15 +27,15 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
 # #########################################################################
 
 class Message(BaseModel):
-    role: typing.Optional[str] = None
+    role: typing.Optional[typing.Union[str, str]] = None
     content: typing.Optional[str] = None
 
 class QueryPastConversationTool(BaseModel):
-    tool_name: typing.Optional[str] = None
+    action_name: typing.Optional[str] = None
     search_phrases: typing.List[str]
 
 class ReplyTool(BaseModel):
-    tool_name: typing.Optional[str] = None
+    action_name: typing.Optional[str] = None
     response: typing.Optional[str] = None
 
 class Resume(BaseModel):
@@ -45,7 +45,7 @@ class Resume(BaseModel):
     skills: typing.List[str]
 
 class StopTool(BaseModel):
-    tool_name: typing.Optional[str] = None
+    action_name: typing.Optional[str] = None
     parting_message: typing.Optional[str] = None
 
 # #########################################################################

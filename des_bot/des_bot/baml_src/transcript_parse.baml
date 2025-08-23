@@ -1,7 +1,7 @@
 
 
 function DetectTranscriptionEnd(transcription: string) -> bool {
-    client LocalMistral //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI_API_KEY to use this client.
+    client MistralInstruct //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI_API_KEY to use this client.
     prompt #"
         Is this a complete user message?
 

@@ -112,7 +112,7 @@ class QueryPastConversationToolAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("QueryPastConversationTool")
-        self._properties: typing.Set[str] = set([  "tool_name",  "search_phrases",  ])
+        self._properties: typing.Set[str] = set([  "action_name",  "search_phrases",  ])
         self._props = QueryPastConversationToolProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -141,8 +141,8 @@ class QueryPastConversationToolProperties:
     
     
     @property
-    def tool_name(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("tool_name"))
+    def action_name(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("action_name"))
     
     @property
     def search_phrases(self) -> type_builder.ClassPropertyViewer:
@@ -155,7 +155,7 @@ class ReplyToolAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("ReplyTool")
-        self._properties: typing.Set[str] = set([  "tool_name",  "response",  ])
+        self._properties: typing.Set[str] = set([  "action_name",  "response",  ])
         self._props = ReplyToolProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -184,8 +184,8 @@ class ReplyToolProperties:
     
     
     @property
-    def tool_name(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("tool_name"))
+    def action_name(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("action_name"))
     
     @property
     def response(self) -> type_builder.ClassPropertyViewer:
@@ -249,7 +249,7 @@ class StopToolAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("StopTool")
-        self._properties: typing.Set[str] = set([  "tool_name",  "parting_message",  ])
+        self._properties: typing.Set[str] = set([  "action_name",  "parting_message",  ])
         self._props = StopToolProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -278,8 +278,8 @@ class StopToolProperties:
     
     
     @property
-    def tool_name(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("tool_name"))
+    def action_name(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("action_name"))
     
     @property
     def parting_message(self) -> type_builder.ClassPropertyViewer:

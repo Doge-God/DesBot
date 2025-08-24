@@ -20,7 +20,7 @@ client<llm> CustomGPT4oMini {
 client<llm> MistralInstruct {
   provider "openai-generic"
   options {
-    base_url "http://192.168.137.81:11434/v1"
+    base_url "http://192.168.137.53:11434/v1"
     model "mistral-small3.2:24b-instruct-2506-q4_K_M"
   }
 }
@@ -28,7 +28,7 @@ client<llm> MistralInstruct {
 client<llm> Mistral {
   provider "openai-generic"
   options {
-    base_url "http://192.168.137.81:11434/v1"
+    base_url "http://192.168.137.53:11434/v1"
     model "mistral-small3.2-16k"
   }
 }

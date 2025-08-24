@@ -13,7 +13,7 @@ class StopTool {
     action_name "stop" @description(#"
         when the user indicate clear intention to stop the conversation
     "#) @stream.done
-    parting_message string @description(#"
+    response string @description(#"
         indicate to the user that the conversation is stopping
     "#)
 }

@@ -249,7 +249,7 @@ class StopToolAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("StopTool")
-        self._properties: typing.Set[str] = set([  "action_name",  "parting_message",  ])
+        self._properties: typing.Set[str] = set([  "action_name",  "response",  ])
         self._props = StopToolProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -282,8 +282,8 @@ class StopToolProperties:
         return type_builder.ClassPropertyViewer(self.__bldr.property("action_name"))
     
     @property
-    def parting_message(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("parting_message"))
+    def response(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("response"))
     
     
 

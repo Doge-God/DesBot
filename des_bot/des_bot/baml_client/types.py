@@ -64,7 +64,7 @@ class Resume(BaseModel):
 
 class StopTool(BaseModel):
     action_name: typing_extensions.Literal['stop']
-    parting_message: str
+    response: str
 
 # #########################################################################
 # Generated type aliases (0)

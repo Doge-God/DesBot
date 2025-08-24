@@ -46,7 +46,7 @@ class Resume(BaseModel):
 
 class StopTool(BaseModel):
     action_name: typing.Optional[str] = None
-    parting_message: typing.Optional[str] = None
+    response: typing.Optional[str] = None
 
 # #########################################################################
 # Generated type aliases (0)

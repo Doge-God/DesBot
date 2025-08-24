@@ -6,11 +6,12 @@ from enum import Enum
 import numpy as np
 from dotenv import load_dotenv
 import sounddevice as sd
-from typing import List
+from typing import List, Optional
 import math
 
 from .services.stt_session import SttSessionKyutai
-from .baml_client import b, partial_types, types
+# from .baml_client import b, partial_types, types
+from .baml_client.async_client import b
 from .baml_client.types import Message
 from .baml_client.stream_types import ReplyTool
 
@@ -50,10 +51,17 @@ class ConversationManagerNode(Node):
         
         # tasks & websocket session managment
         self.robot_response_task = None
+        self.sentence_piece_tts_task_queue = asyncio.Queue()
+
         self.mic_stream_task = None
         self.stt_session = None
         self.stt_stream_task = None
-        self.consoladate_conversation_task = None
+        '''Listents to STT server returns. e.g. transcribed words and audio events.'''
+        self.tts_task = None
+        '''Loop through queued tasks for speaking sentence pieces'''
+
+        
+        self.mic_audio_queue = asyncio.Queue()
 
         # conversation state, flag and buffers
         self.state = ConversationState.NO_CONVERSATION
@@ -66,6 +74,16 @@ class ConversationManagerNode(Node):
         asyncio.run(self.run_conversation())
 
 
+    def change_state(new_state:ConversationState):
+        pass
+
+    
+    async def speak_sentence_piece(self, input:str):
+        self.robot_generated_buffer.append(input)
+        self.get_logger().info(f"Sim start saying: {input}")
+        await asyncio.sleep(2)
+        self.get_logger().info(f"Sim finished saying: {input}")
+
 
     def should_transition_user_to_robot(self):
         '''Is user turn, detected pause, and have some transcript'''
@@ -73,7 +91,7 @@ class ConversationManagerNode(Node):
             return False
         if (self.state == ConversationState.USER_TURN 
             and self.stt_session.pause_predictor.value > 0.6
-            and self.stt_word_buffer):
+            and len(self.stt_word_buffer)>=1):
             return True
         else:
             return False
@@ -91,7 +109,6 @@ class ConversationManagerNode(Node):
                 num_frames = int(math.ceil(0.5 / (0.08))) + 1 # some extra for safety
                 blank_audio = np.zeros(1920, dtype=np.float32)
                 self.end_of_flush_time = self.stt_session.current_time_sec + self.stt_session.delay_sec
-                
                 for _ in range (num_frames):
                     await self.stt_session.send_audio(blank_audio)
         
@@ -100,11 +117,13 @@ class ConversationManagerNode(Node):
             # we are sure transcription is complete at time of silence detection
             if self.stt_session.current_time_sec > self.end_of_flush_time:
 
-                self.get_logger().info("User flushed final audio: yielding to ROBOT_TURN")
-                self.end_of_flush_time = None
+                new_user_message = Message(role='user', content= " ".join(self.stt_word_buffer))
+                self.message_history.append(new_user_message)
+                self.get_logger().info(f"User turn finished: Done flushing. Message added: {str(new_user_message)}")
 
-                self.message_history.append(Message(role='user', content= " ".join(self.stt_word_buffer) ))
-                self.stt_word_buffer = ""
+                # reset buffer
+                self.stt_word_buffer = []
+                self.end_of_flush_time = None
 
                 self.state = ConversationState.ROBOT_TURN
                 self.robot_response_task = self.generate_response()
@@ -115,17 +134,20 @@ class ConversationManagerNode(Node):
     async def generate_response(self):
         """Get response from LLM and run tts."""
         stream = b.stream.MinimalChatAgent(self.message_history)
-        for partial in stream:
+        
+
+        async for partial in stream:
             if isinstance(partial,ReplyTool):
                 if partial.response:
                     print(partial.response)
-        
+
         ## TEMP ######################################################################
-        final = stream.get_final_response()
+        final = await stream.get_final_response()
         if isinstance(final, ReplyTool):
             print("REPLY: " + final.response)
         self.message_history.append(Message(role='assistant', content=final.response))
 
+        await self.speaker_audio_queue
         self.get_logger().info("Robot generation finished. Yield to USER_TURN")
         self.state = ConversationState.USER_TURN
             
@@ -147,34 +169,62 @@ class ConversationManagerNode(Node):
         if not robot_invoke_reason:
             self.state = ConversationState.USER_TURN
 
-        self.mic_stream_task = self.run_mic_stream()
         self.stt_stream_task = self.run_stt_stream()
+        self.mic_stream_task = self.run_mic_stream()
+       
+        asyncio.create_task(self.stt_stream_task)
+        asyncio.create_task(self.mic_stream_task)
+        
 
         await asyncio.gather(
+            self.stt_stream_task,
             self.mic_stream_task,
-            self.stt_stream_task
         )
 
-    async def run_mic_stream(self):
+        self.get_logger().info("Conversation finished cleanly.")
+
+    async def run_mic_stream(self, loop:Optional[asyncio.AbstractEventLoop]=None):
         self.get_logger().info("Begin mic stream, sending data")
         # Start the audio stream
+        
+        if not loop:
+            this_loop = asyncio.get_running_loop()
+        else:
+            this_loop = loop
+
+        def audio_callback(data:np.ndarray, frames, time, status):
+            this_loop.call_soon_threadsafe(
+                # get copy of mono channel data
+                self.mic_audio_queue.put_nowait, data[:,0].astype(np.float32).copy()
+            )
+
         with sd.InputStream(
             samplerate=self.SAMPLE_RATE, 
             channels=1, 
-            dtype='float32') as stream:
+            blocksize=1920,
+            dtype='float32',
+            callback=audio_callback):
+        
 
-            # run every ~80ms 
             while self.state != ConversationState.SHUTTING_DOWN:
-                audio_data, _ = stream.read(1920)
-                mono_audio = audio_data[:, 0]  # float32 mono audio
+                audio_data = await self.mic_audio_queue.get()
                 # Resample to 24kHz with librosa
                 resampled = librosa.resample(
-                    mono_audio, orig_sr=self.SAMPLE_RATE, target_sr=self.TARGET_RATE
-                ).astype(np.float32)
+                    audio_data, orig_sr=self.SAMPLE_RATE, target_sr=self.TARGET_RATE
+                )  #.astype(np.float32)
 
                 # dont send audio when flushing
                 if not self.end_of_flush_time:
                     await self.stt_session.send_audio(resampled)
+                
+                await self.handle_stt_triggered_state_change()
+
+        self.get_logger().info("Mic stream closed cleanly.")
+
+    async def run_tts_tasks(self):
+        while self.state == ConversationState.ROBOT_TURN:
+            task = self.sentence_piece_tts_task_queue.get()
+            await task
 
     async def run_stt_stream(self):
         '''closes by calling shutdown on stt_session instance'''
@@ -183,7 +233,13 @@ class ConversationManagerNode(Node):
             raise RuntimeError("Trying to listen to stt response without instantiating object first.")
         
         async for message in self.stt_session:
+            # first utterance in user turn, reset predictor value
+            if len(self.stt_word_buffer) == 0:
+                self.stt_session.pause_predictor.value = 0
+
             self.stt_word_buffer.append(message.text)
+
+        self.get_logger().info("STT task finished.")
 
 
                 
@@ -197,8 +253,6 @@ class ConversationManagerNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = ConversationManagerNode()
-    timer_period = 2.0  # seconds
-    node.create_timer(timer_period, node.timer_callback)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

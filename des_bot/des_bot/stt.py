@@ -99,6 +99,7 @@ class ControlSttStateService(Node):
         try:
             speech_started = False
             async for message in websocket:
+                self.get_logger().info("recieved server msg")
                 data = msgpack.unpackb(message, raw=False)
                 # print(data)
 

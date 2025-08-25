@@ -1,4 +1,3 @@
-from openai import OpenAI
 import sounddevice as sd, time
 import numpy as np
 import requests
@@ -41,35 +40,40 @@ import asyncio
 
 input = "I lived at West Egg, the—well, the less fashionable of the two, though this is a most superficial tag to express the bizarre and not a little sinister contrast between them."
 
-response = requests.post(
-    "http://localhost:8880/v1/audio/speech",
-    json={
-        "input": input,
-        "voice": "af_bella",
-        "response_format": "pcm",
-        "normalization_options": {
-            "normalize": False,
-        }
-    },
-    stream=True
-)
+# response = requests.post(
+#     "http://192.168.137.1:8880/v1/audio/speech",
+#     json={
+#         "input": input,
+#         "voice": "bf_v0emma",
+#         "response_format": "pcm",
+#         "speed": 1.1
+#         # "normalization_options": {
+#         #     "normalize": False,
+#         # },
+
+#     },
+#     stream=True
+# )
             
-t0 = time.perf_counter()
-with sd.OutputStream(samplerate=24000, channels=1, dtype=np.int16) as stream:
-    t1 = time.perf_counter()
-    print(f"Opened stream in: {(t1-t0)*1000:.2f} ms")
-    duration = 0.2
-    t = np.arange(int(duration*24000)) / 24000
-    signal = np.sin(2* np.pi * 440 * t)
-    signal_int16 = (signal * 32767).astype(np.int16)
-    stream.write(signal_int16)
+# t0 = time.perf_counter()
+# with sd.OutputStream(samplerate=24000, channels=1, dtype=np.int16) as stream:
+#     t1 = time.perf_counter()
+#     print(f"Opened stream in: {(t1-t0)*1000:.2f} ms")
+#     # duration = 0.2
+#     # t = np.arange(int(duration*24000)) / 24000
+#     # signal = np.sin(2* np.pi * 440 * t)
+#     # signal_int16 = (signal * 32767).astype(np.int16)
+#     # stream.write(signal_int16)
 
-    for chunk in response.iter_content(chunk_size=1024):
-        if chunk:
+#     for chunk in response.iter_content(chunk_size=1024):
+#         if chunk:
            
-            stream.start()
+#             stream.start()
 
-            audio_array = np.frombuffer(chunk, dtype=np.int16)
-            stream.write(audio_array)
+#             audio_array = np.frombuffer(chunk, dtype=np.int16)
+#             stream.write(audio_array)
+import aiohttp
 
-
+# class TtsStreamSanity:
+#     def __init__(self):
+        

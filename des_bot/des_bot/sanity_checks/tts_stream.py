@@ -72,7 +72,7 @@ input = "I lived at West Egg, the—well, the less fashionable of the two, thoug
 #             audio_array = np.frombuffer(chunk, dtype=np.int16)
 #             stream.write(audio_array)
 
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 from numpy.typing import NDArray
 
 class SentencePiece(NamedTuple):
@@ -82,48 +82,18 @@ class SentencePiece(NamedTuple):
 
 
 import aiohttp
-
-class TtsStreamSanity:
-    def __init__(self):
-        self.tts_session = aiohttp.ClientSession()
-        self.speaker_audio_queue = asyncio.Queue()
-
-        def speaker_audio_callback(outdata, frames, time, status):
-            """Sounddevice callback function."""
-            if status:
-                print(status)
-            try:
-                # Get data from the asyncio queue (blocking in this thread, but put_nowait is used)
-                data = self.speaker_audio_queue.get_nowait()
-                if data is None: # End of stream
-                    raise sd.CallbackStop
-                outdata[:] = data.reshape(-1, 1) # Reshape for single channel
-            except asyncio.QueueEmpty:
-                outdata.fill(0) # Fill with zeros if no data is available
-            except sd.CallbackStop:
-                raise
-        self.speaker_stream = sd.OutputStream(samplerate=24000, channels=1, callback=speaker_audio_callback)
-        self.speaker_audio_send_task = asyncio.create_task(self.send_audio_from_sentence_piece_tts_coroutine())
-
-
-        self.test_queue:asyncio.Queue[SentencePieceTts] = asyncio.Queue()
-        self.test_queue.put_nowait(SentencePieceTts("I ate an apple today." ,self.tts_session))
-        self.test_queue.put_nowait(SentencePieceTts("I ate an apple today." ,self.tts_session))
-
-    async def send_audio_from_sentence_piece_tts_coroutine(self):
-        while True:
-            sentence_piece_tts = await self.test_queue.get()
-            while not sentence_piece_tts.is_complete_audio:
-                audio_data = await sentence_piece_tts.generated_audio.get()
-                self.speaker_audio_queue.put_nowait(audio_data)
+            
 
         
 class SentencePieceTts:
-    def __init__(self, text: str, session: aiohttp.ClientSession):
+    def __init__(self, text: str, session: aiohttp.ClientSession, loop:asyncio.AbstractEventLoop):
         self.text = text
         self.session = session
-        self.generated_audio:asyncio.Queue[np.typing.NDArray] = asyncio.Queue()
-        self.is_complete_audio = False
+        self.audio_buffer = b""
+        self.is_complete_audio_fetched = False
+        self.is_all_audio_consumed = asyncio.Event()
+        self.loop = loop
+
         self.fetch_coroutine = self._fetch()
         asyncio.create_task(self.fetch_coroutine)
 
@@ -136,82 +106,109 @@ class SentencePieceTts:
             "speed": 1,
             "stream": True,
         }
-        leftover = b""
-        async with self.session.post("http://localhost:8880/v1/audio/speech",json=payload) as resp:
+
+        async with self.session.post("http://192.168.137.1:8880/v1/audio/speech",json=payload) as resp:
             async for chunk in resp.content.iter_chunked(1024): #iter_chunks(1024):
+                # np_audio = np.frombuffer(chunk, dtype=np.int16)#.astype(np.float32)
+                # print(np_audio.shape)
+                # self.generated_audio.put_nowait(np_audio)
                 if not chunk:
                     continue
-                data = leftover + chunk
-                # Ensure even number of bytes
-                if len(data) % 2 != 0:
-                    leftover, data = data[-1:], data[:-1]  # keep last byte as leftover
-                else:
-                    leftover = b""
+                self.audio_buffer += chunk
+        
+        self.is_complete_audio_fetched = True
+        print(f"^ Done fetch: [{self.text}]. Got [{len(self.audio_buffer)}] bytes")
 
-                if data:
-                    np_audio = np.frombuffer(data, dtype=np.int16)
-                    self.generated_audio.put_nowait(np_audio)
-        self.is_complete_audio = True
-        print(f"^ Done fetch: [{self.text}]")
+    def force_get_samples(self, samples_required:int):
+        '''Get x samples, indicate if all audio generated is emptied with this read.'''
+        if len(self.audio_buffer) < samples_required:
+            # Not enough samples, return what we have and pad with zeros
+            result = self.audio_buffer
+            padding = b'\x00' * (samples_required - len(self.audio_buffer))
+            self.audio_buffer = b''
 
-    async def __aiter__(self):
-        if not self.is_complete_audio:
-            yield await self.generated_audio.get()
+            print(f"Outputting bytes:  [{len(result+padding)}] -------------------- PADDED")
+
+            if self.is_complete_audio_fetched:
+                self.loop.call_soon_threadsafe(
+                    self.is_all_audio_consumed.set()
+                )
+                
+                print(f"# CONSUMED ALL AUDIO: [{self.text}] <<<<<<<<<<<<<<<<<<<<<<<<<<")
+
+            return result + padding
+        else:
+            # Enough samples, return requested amount and keep the rest
+            result = self.audio_buffer[:samples_required]
+            self.audio_buffer = self.audio_buffer[samples_required:]
+            print(f"Outputing bytes: [{len(result)}]")
+            return result
             
 
 # ---- Global playback system ----
-global_audio_queue = asyncio.Queue() 
 
-def audio_callback(outdata, frames, time, status):
-    if status:
-        print("Audio callback status:", status)
-    try:
-        data = global_audio_queue.get_nowait()
-    except Exception:
-        outdata[:] = np.zeros((frames, 1), dtype=np.float32)
-    else:
-        if len(data) < frames:
-            outdata[:len(data), 0] = data
-            outdata[len(data):, 0] = 0
-        else:
-            outdata[:, 0] = data[:frames]
-            if len(data) > frames:
-                # Push remainder back
-                global_audio_queue.put_nowait(data[frames:])
+class Mock():
+    def __init__(self):
+        self.sentence_piece_tts_queue:asyncio.Queue[SentencePieceTts] = asyncio.Queue()
+        self.speaker_output_stream = None
+        self.current_sentence_piece_tts:Optional[SentencePieceTts] = None
+        self.advance_sentence_piece_tts_task = self.advance_sentence_piece_tts()
 
+        self.tts_session = aiohttp.ClientSession()
 
-async def feed_tts_to_queue(tts: SentencePieceTts):
-    async for chunk in tts:
-        global_audio_queue.put_nowait(chunk)
+        self.is_state_correct = True
+
+        self.spoken = []
+
+        asyncio.create_task(self.advance_sentence_piece_tts_task)
+        self.make_audio_stream()
+
+        self.sentence_piece_tts_queue.put_nowait(SentencePieceTts("This is the first sentence.", self.tts_session, asyncio.get_running_loop()))
+        self.sentence_piece_tts_queue.put_nowait(SentencePieceTts("This is the second sentence.", self.tts_session, asyncio.get_running_loop()))
+        self.sentence_piece_tts_queue.put_nowait(SentencePieceTts("This is the third sentence.", self.tts_session, asyncio.get_running_loop()))
 
 
-async def main():
-    async with aiohttp.ClientSession() as session:
-        # Create two TTS tasks
-        tts1 = SentencePieceTts("Hello, this is the first sentence.", session)
-        tts2 = SentencePieceTts("And this is the second sentence.", session)
+    async def advance_sentence_piece_tts(self):
+        while self.is_state_correct:
+            if (not self.current_sentence_piece_tts or 
+            self.current_sentence_piece_tts.is_all_audio_consumed.is_set() ):
+                self.current_sentence_piece_tts = await self.sentence_piece_tts_queue.get()
+                self.spoken.append(self.current_sentence_piece_tts.text)
+                print(f"NEW sentence tts obj: [{self.current_sentence_piece_tts.text}]")
+                await self.current_sentence_piece_tts.is_all_audio_consumed.wait()
+                print("Recieved. CONTINUE----------------------------------------------------------------")
 
-        # Start audio stream
-        stream = sd.OutputStream(
+    def make_audio_stream(self, start_now=True):
+        def audio_callback(outdata, frames, time, status):
+            '''ASSUME int16 audio: each frame = 16bit (2bytes)'''
+            if status:
+                print("Audio callback status:", status)
+            if not self.current_sentence_piece_tts or self.current_sentence_piece_tts.is_all_audio_consumed.is_set():
+                outdata[:] = b'\x00' * frames*2 #16bit frames: 
+                return
+
+            buffered_data = self.current_sentence_piece_tts.force_get_samples(frames*2)
+          
+            outdata[:] = buffered_data
+
+        self.speaker_output_stream = sd.RawOutputStream(
             samplerate=24000,  # adjust to your API’s sample rate
             channels=1,
             dtype="int16",
-            callback=audio_callback,
-            blocksize=1024,
+            callback=audio_callback
         )
-        stream.start()
+        if start_now:
+            self.speaker_output_stream.start()
 
-        # Feed both TTS into the global queue sequentially
-        await feed_tts_to_queue(tts1)
-        await feed_tts_to_queue(tts2)
 
-        # wait a bit for last audio to finish playing
-        await asyncio.sleep(2)
-        stream.stop()
-        stream.close()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+
+
+async def main():
+    Mock()
+    await asyncio.sleep(10)
+
+asyncio.run(main())
 
                     
 

@@ -115,7 +115,9 @@ class SentencePieceTts:
                 if not chunk:
                     continue
                 self.audio_buffer += chunk
-        
+
+        # trim off 300ms of end silence.
+        self.audio_buffer = self.audio_buffer[:-14400] # 24000 frames/s * 0.3s * 2(byte per frame)
         self.is_complete_audio_fetched = True
         print(f"^ Done fetch: [{self.text}]. Got [{len(self.audio_buffer)}] bytes")
 

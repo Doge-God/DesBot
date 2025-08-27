@@ -1,45 +1,39 @@
 import asyncio
+import aiohttp
 import librosa
 import rclpy
 from rclpy.node import Node
-from enum import Enum
+from enum import Flag, auto
 import numpy as np
 from dotenv import load_dotenv
-import requests
 import sounddevice as sd
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 import math
-import aiohttp
 
 
 from .services.stt_session import SttSessionKyutai
 from .utils.llm_stream_parser import SemanticDeltaParser
-# from .baml_client import b, partial_types, types
+from .utils.output_audio_processor import AudioProcessorInt16
+
 from .baml_client.async_client import b
 from .baml_client.types import Message
 from .baml_client.stream_types import ReplyTool
 
-# sanity check stuff for llm
-        # self.get_logger().info('Creating a minimal chat agent...')
-        # chat = [
-        #     Message( role="assistant",content="Hello! How can I assist you today?"),
-        #     Message( role ="user", content="Hmm, what can you do? Give me a detailed list."),
-        # ]
-        # stream = b.stream.MinimalChatAgent(chat)
-        # for partial in stream:
-        #     if isinstance(partial,ReplyTool):
-        #         # print(f"Streamed: {partial}")
-        #         if partial.response:
-        #             print(partial.response)
-        # final = stream.get_final_response()
+from .services.sentence_piece_tts import SentencePieceTts
+
 load_dotenv()
 
-class ConversationState(Enum):
-    NO_CONVERSATION = 0
-    STARTING_UP = 1
-    USER_TURN = 2
-    ROBOT_TURN = 3
-    SHUTTING_DOWN = 4
+class ConversationState(Flag):
+    NO_CONVERSATION = auto()
+    STARTING_UP = auto()
+    USER_TURN = auto()
+    ROBOT_RECIEVED = auto()
+    ROBOT_USING_TOOLS = auto()
+    ROBOT_SPEAKING = auto()
+    SHUTTING_DOWN = auto()
+    #-----------------------------------------------
+    ROBOT_TURN = ROBOT_RECIEVED | ROBOT_SPEAKING | ROBOT_USING_TOOLS
+    
 
 class ChatHistory:
     def __init__(self):
@@ -53,27 +47,26 @@ class ConversationManagerNode(Node):
         self.TARGET_RATE = 24000
 
         
-        # tasks
+        # tasks ---------------------------------------------------------------------------
         self.robot_response_task = None
         self.mic_stream_task = None
         self.stt_stream_task = None
         '''Listents to STT server returns. e.g. transcribed words and audio events.'''
-        self.tts_task = None
-        '''Loop through queued tasks for speaking sentence pieces'''
 
         # queues & stream/connection management structures
-        self.stt_session = None # this one has its own shutdown ---------------------------
+        self.stt_session:Optional[SttSessionKyutai] = None # this one has its own shutdown ---------------------------
         '''Manager for websocket connection and parses input from server'''
         self.tts_session = None
         self.speaker_output_stream = None
-        self.sentence_pieces_queue = None
-        self.mic_audio_queue = None
+        self.sentence_piece_tts_queue:Optional[asyncio.Queue["SentencePieceTts"]] = None
+        self.current_sentence_piece_tts:Optional["SentencePieceTts"] = None
 
         # conversation state, flag and buffers
         self.state = ConversationState.NO_CONVERSATION
         self.message_history:List[Message] = []
         self.stt_word_buffer = []
-        self.robot_generated_buffer = []
+        self.robot_spoken_buffer = []
+        self.is_llm_generation_complete = False
         self.end_of_flush_time = None
         '''Internal time for stt session: time for when text stream is guaranteed to be complete up to flush point.'''
 
@@ -82,34 +75,7 @@ class ConversationManagerNode(Node):
 
     def change_state(new_state:ConversationState):
         pass
-
     
-    async def say_sentence_piece(self, input:str):
-        '''Add sentence piece to generated buffer (track what is said for user interruption)
-        , async stream audio from source and chuck in self output stream.'''
-        print(f"Saying: {input}")
-        self.robot_generated_buffer.append(input)
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST",
-                "http://192.168.137.1:8880/v1/audio/speech",
-                json={
-                    "input": input,
-                    "voice": "bf_v0emma",
-                    "response_format": "pcm",
-                    "speed": 1.1
-                }
-            ) as response:
-        
-                if not isinstance(self.speaker_output_stream, sd.OutputStream):
-                    self.get_logger().error("Attempt to TTS with no valid stream.")
-                
-                async for chunk in response.aiter_bytes(chunk_size=1024):
-                    if chunk:
-                        audio_array = np.frombuffer(chunk, dtype=np.int16)
-                        # self.speaker_output_stream.write(audio_array)
-        print(f"Done Saying: {input}")
-     
 
 
     def should_transition_user_to_robot(self):
@@ -125,7 +91,7 @@ class ConversationManagerNode(Node):
 
 
     async def handle_stt_triggered_state_change(self):
-        '''Handle conversation state transition. Run every tick (~per 80ms; 1920/24k; 12.5Hz) of mic data sent.'''
+        '''Handle conversation state transition. Polled every tick (~per 80ms; 1920/24k; 12.5Hz) of mic data sent.'''
         
         # is not in the process of flushing audio
         if self.end_of_flush_time is None:
@@ -148,107 +114,211 @@ class ConversationManagerNode(Node):
                 self.message_history.append(new_user_message)
                 self.get_logger().info(f"User turn finished: Done flushing. Message added: {str(new_user_message)}")
 
-                # reset buffer
+                # reset buffer & flush indicator flag
                 self.stt_word_buffer = []
                 self.end_of_flush_time = None
 
+                # try getting response
                 self.state = ConversationState.ROBOT_TURN
-                self.robot_response_task = self.generate_response()
-                asyncio.create_task(self.robot_response_task)
+                self.robot_response_task = asyncio.create_task(self.generate_response())
                 
-                
+    async def advance_sentence_piece_tts(self):
+        '''Loop to grab sentence piece tts from queue for playback.'''
+        try: # for cancellation
+            while self.state in ConversationState.ROBOT_TURN:
+                # grab from queue
+                self.current_sentence_piece_tts = await self.sentence_piece_tts_queue.get()
+                # add to tracker & log
+                self.robot_spoken_buffer.append(self.current_sentence_piece_tts.text)
+                print(f"vv NEW sentence tts obj: [{self.current_sentence_piece_tts.text}]--------------------")
+                #wait for current sentence piece tts to finish
+                await self.current_sentence_piece_tts.is_all_audio_consumed.wait()
+                # before trying to wait for next sentence piece tts to be in queue, check if current
+                # one is the last sentence piece generated by llm
+                if self.sentence_piece_tts_queue.qsize() == 0:
+                    if self.is_llm_generation_complete:
+                        break
+                print(f"^^ Finished sentence tts obj: [{self.current_sentence_piece_tts.text}] CONTINUE-------")
+        finally:
+            print(f"SPOKEN ENTIRE LLM RESPONSE.")            
 
     async def generate_response(self):
         """Get response from LLM and run tts."""
-        stream = b.stream.MinimalChatAgent(self.message_history)
-        
-        parser = SemanticDeltaParser()
+        try:
+            # prepare llm related actions
+            stream = b.stream.MinimalChatAgent(self.message_history)
+            parser = SemanticDeltaParser()
+            self.is_llm_generation_complete = False
 
-        async for partial in stream:
-            if isinstance(partial,ReplyTool):
-                if partial.response:
-                    new_pieces, unclosed_piece = parser.parse_new_input(partial.response)
-                    
-                    for new_piece in new_pieces:
-                        self.sentence_pieces_queue.put_nowait(
-                            new_piece
-                        )
-        
-        if unclosed_piece:
-            self.sentence_pieces_queue.put_nowait(
-                unclosed_piece
-            )
-
-        ## TEMP ######################################################################
-        final = await stream.get_final_response()
-        
-        said = " ".join(self.robot_generated_buffer)
+            # prepare tts related actions
+            min_tts_request_gap_sec = 1.0
+            next_allowed_tts_request_stamp = self.get_clock().now().nanoseconds
+            advance_sentence_piece_tts_task = asyncio.create_task(self.advance_sentence_piece_tts())
             
-        self.message_history.append(Message(role='assistant', content=final.response))
+            # process streamed llm response
+            async for partial in stream:
+                if isinstance(partial,ReplyTool):
+                    if partial.response:
+                        new_pieces, unclosed_piece = parser.parse_new_input(partial.response)
+                        for new_piece in new_pieces:
 
+                            now_stamp = self.get_clock().now().nanoseconds
+                            # Request NOT allowed immediately: less than specified sec apart from previous request: 
+                            #   needed to ensure fastkoko not drowning and degrade first audio time performance
+                            if now_stamp <= next_allowed_tts_request_stamp:
+                                delta_sec = (next_allowed_tts_request_stamp-now_stamp) / 1_000_000_000
+                                self.sentence_piece_tts_queue.put_nowait(
+                                    SentencePieceTts(new_piece, self.tts_session, asyncio.get_running_loop(), delta_sec)
+                                )
+                            # Request allowed, start fetching immediatly
+                            else:
+                                self.sentence_piece_tts_queue.put_nowait(
+                                    SentencePieceTts(new_piece, self.tts_session, asyncio.get_running_loop() )
+                                )
+                            
+                            next_allowed_tts_request_stamp += min_tts_request_gap_sec * 1_000_000_000
+                            
+            if unclosed_piece:
+                # unlikely to happen. Also when it gets here other tts request are likely complete anyway.
+                self.sentence_piece_tts_queue.put_nowait(
+                    SentencePieceTts(unclosed_piece, self.tts_session, asyncio.get_running_loop() )
+                )
         
-        self.get_logger().info("Robot generation finished. Yield to USER_TURN")
-        self.state = ConversationState.USER_TURN
-            
+            self.is_llm_generation_complete = True
+            await asyncio.gather(advance_sentence_piece_tts_task)
 
-    async def run_conversation(self, robot_invoke_reason=None):
+        except asyncio.CancelledError:
+        # when generation task is cancelled: cancel tts obj cycling task, empty sentence_piece_tts_queue
+            advance_sentence_piece_tts_task.cancel()
+            try:
+                while True:
+                    sentence_piece_tts = self.sentence_piece_tts_queue.get_nowait()
+                    sentence_piece_tts.fetch_task.cancel()
+            except asyncio.QueueEmpty:
+                pass
+            raise
+
+        finally:
+            self.get_logger().info("Robot generation finished. Yield to USER_TURN")
+            self.message_history.append(Message(role='assistant', content=" ".join(self.robot_spoken_buffer)))
+            self.robot_spoken_buffer = []
+            self.state = ConversationState.USER_TURN
+    
+    async def run_converstion_startup(self):
+        '''Start connections, set up queues etc. NOT setting state flag.'''
         self.get_logger().info("Starting conversation...")
         t0 = self.get_clock().now().nanoseconds
 
-        self.state = ConversationState.STARTING_UP
-
         # initialize streams, tasks, queues etc etc.
-        self.speaker_output_stream = sd.OutputStream(samplerate=24000, channels=1, dtype=np.int16)
-        self.speaker_output_stream.start()
         self.mic_audio_queue = asyncio.Queue()
-        self.sentence_pieces_queue = asyncio.Queue()
+        self.sentence_piece_tts_queue = asyncio.Queue()
+
+        ## START TTS AUDIO STREAM ------------------------------------------------
+        # Contiously try grabbing audio from current sentence piece tts.
+        # Fill with silence in any other case
+        def audio_callback(outdata, frames, time, status):
+            '''ASSUME int16 audio: each frame = 16bit (2bytes)'''
+            if status:
+                print("Audio callback status:", status)
+            if not self.current_sentence_piece_tts or self.current_sentence_piece_tts.is_all_audio_consumed.is_set():
+                outdata[:] = b'\x00' * frames*2 #16bit frames: 
+                return
+
+            buffered_data = self.current_sentence_piece_tts.force_get_samples(frames*2)
+            processed = (
+                AudioProcessorInt16(buffered_data)
+                # .ring_mod(30)
+                .comb_filter(delay=75, feedback=0.3)
+                # .square_tremolo(10)
+                .process()
+            )
+            outdata[:] = processed
+        self.speaker_output_stream = sd.RawOutputStream(
+            samplerate=24000,  
+            channels=1,
+            dtype="int16",
+            callback=audio_callback
+        )
+        self.speaker_output_stream.start()
+        #-------------------------------------------------------------------------
 
         self.message_history:List[Message] = []
         self.stt_word_buffer = []
-        self.robot_generated_buffer = []
+        self.robot_spoken_buffer = []
         self.end_of_flush_time = None
-
+        
+        # networking sessions ---------------------------------
         self.stt_session =  SttSessionKyutai(
             node_clock=self.get_clock(),
             node_logger=self.get_logger(),
         )
-
         await self.stt_session.start_up(
             url="ws://192.168.137.1:8080/api/asr-streaming",
             api_key="public_token"
         )
+        self.tts_session = aiohttp.ClientSession()
 
         t1 = self.get_clock().now().nanoseconds
         self.get_logger().info(f"Started Conversation. Readied in: {(t1-t0)/1000000:.2f} ms")
+
+    def conversation_clean_up(self):
+        '''Reset all flags, queues etc.'''
+        if self.speaker_output_stream:
+            self.speaker_output_stream.close()
+        else:
+            self.get_logger().warning("Cleaning up conversation: trying to close non-existing speaker output stream.")
+
+        # tasks ---------------------------------------------------------------------------
+        self.robot_response_task = None
+        self.mic_stream_task = None
+        self.stt_stream_task = None
+        '''Listents to STT server returns. e.g. transcribed words and audio events.'''
+        self.advance_sentence_piece_tts_task = None
+        '''Loop through queued tasks for speaking sentence pieces'''
+
+        # queues & stream/connection management structures
+        self.stt_session:Optional[SttSessionKyutai] = None # this one has its own shutdown ---------------------------
+        '''Manager for websocket connection and parses input from server'''
+        self.tts_session = None
+        self.speaker_output_stream = None
+        self.sentence_piece_tts_queue:Optional[asyncio.Queue["SentencePieceTts"]] = None
+        self.current_sentence_piece_tts:Optional["SentencePieceTts"] = None
+
+        # conversation state, flag and buffers
+        self.state = ConversationState.NO_CONVERSATION
+        self.message_history:List[Message] = []
+        self.stt_word_buffer = []
+        self.robot_spoken_buffer = []
+        self.is_llm_generation_complete = False
+        self.end_of_flush_time = None
+
+    async def run_conversation(self, robot_invoke_reason=None):
+
+        self.state = ConversationState.STARTING_UP
+
+        await self.run_converstion_startup()
 
         # run "Main" loops
         if not robot_invoke_reason:
             self.state = ConversationState.USER_TURN
 
-        self.stt_stream_task = self.run_stt_stream()
-        self.mic_stream_task = self.run_mic_stream()
-        self.tts_tasks_runner_task = self.run_tts_tasks()
-       
-        asyncio.create_task(self.stt_stream_task)
-        asyncio.create_task(self.mic_stream_task)
-        asyncio.create_task(self.tts_tasks_runner_task)
+        self.stt_stream_task = asyncio.create_task(self.run_stt_stream())
+        self.mic_stream_task = asyncio.create_task(self.run_mic_stream())
         
-
         await asyncio.gather(
             self.stt_stream_task,
             self.mic_stream_task,
-            self.tts_tasks_runner_task
         )
 
         # Clean up
-
-        self.speaker_output_stream.close()
-        self.sentence_pieces_queue = None
-        self.mic_audio_queue = None
+        self.conversation_clean_up()
 
         self.get_logger().info("Conversation finished cleanly.")
 
+    
+
     async def run_mic_stream(self, loop:Optional[asyncio.AbstractEventLoop]=None):
+        '''Close by setting conversation state to shutting down'''
         self.get_logger().info("Begin mic stream, sending data")
         # Start the audio stream
         
@@ -269,7 +339,6 @@ class ConversationManagerNode(Node):
             blocksize=1920,
             dtype='float32',
             callback=audio_callback):
-        
 
             while self.state != ConversationState.SHUTTING_DOWN:
                 audio_data = await self.mic_audio_queue.get()
@@ -285,14 +354,6 @@ class ConversationManagerNode(Node):
                 await self.handle_stt_triggered_state_change()
 
         self.get_logger().info("Mic stream closed cleanly.")
-
-    async def run_tts_tasks(self):
-        while self.state != ConversationState.SHUTTING_DOWN:
-            piece = await self.sentence_pieces_queue.get()
-            # try:
-            await self.say_sentence_piece(piece)
-            # finally:
-            #     self.sentence_piece_tts_task_queue.task_done()
          
 
     async def run_stt_stream(self):
@@ -301,6 +362,7 @@ class ConversationManagerNode(Node):
         if not self.stt_session:
             raise RuntimeError("Trying to listen to stt response without instantiating object first.")
         
+        # breaks gracefully when shutdown func called on stt_session
         async for message in self.stt_session:
             # first utterance in user turn, reset predictor value
             if len(self.stt_word_buffer) == 0:

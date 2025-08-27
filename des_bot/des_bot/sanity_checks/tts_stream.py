@@ -82,7 +82,7 @@ class SentencePiece(NamedTuple):
 
 
 import aiohttp
-            
+        
 class SoundProcessor:
     def __init__(self, data: bytes, samplerate=24000):
         self.samplerate = samplerate
@@ -220,7 +220,7 @@ class SoundProcessor:
         return processed.tobytes()
         
 class SentencePieceTts:
-    def __init__(self, text: str, session: aiohttp.ClientSession, loop:asyncio.AbstractEventLoop, init_wait=0.0,base_url="http://localhost:8880"):
+    def __init__(self, text: str, session: aiohttp.ClientSession, loop:asyncio.AbstractEventLoop, init_wait=0.0,base_url="http://192.168.137.1:8880"):
         self.text = text
         self.session = session
         self.audio_buffer = b""
@@ -290,7 +290,7 @@ class SentencePieceTts:
             print(time.perf_counter())
             print(f"Outputing bytes: [{len(result)}]")
             return result
-            
+
 
 # ---- Global playback system ----
 
@@ -344,9 +344,9 @@ class Mock():
             buffered_data = self.current_sentence_piece_tts.force_get_samples(frames*2)
             processed = (
                 SoundProcessor(buffered_data)
-                .ring_mod(30)
-                .comb_filter(delay=120, feedback=0.8)
-                # .square_tremolo(35)
+                # .ring_mod(30)
+                .comb_filter(delay=75, feedback=0.4)
+                # .square_tremolo(10)
                 .process()
             )
             outdata[:] = processed

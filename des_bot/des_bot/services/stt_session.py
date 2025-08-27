@@ -15,7 +15,8 @@ if TYPE_CHECKING:
 
 class SttSessionKyutai:
     '''Maintain websocket connection.
-    Iterate over for messages recieved from the server.'''
+    Iterate over for messages recieved from the server.
+    Use shutdown func to exit gracefully.'''
     def __init__(self, node_clock:"Clock", node_logger:"RcutilsLogger", delay_sensitivity_idx=2, delay_sec=0.5, frame_time_sec=1920/24000):
         self.websocket = None
         self.node_clock = node_clock

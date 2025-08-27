@@ -1,9 +1,8 @@
-import librosa
+
 import sounddevice as sd, time
 import numpy as np
 import wave
 import asyncio
-import resampy
 
 # client = OpenAI(
 #     base_url="http://localhost:8880/v1", api_key="not-needed"
@@ -235,11 +234,12 @@ class SoundProcessor:
         self.samples = (1 - mix) * self.samples + mix * shifted
         return self
     
-    def resample(self, num_frames = None, target_rate=16000):
+    def downsample(self, num_frames = None, target_rate=16000):
+        '''Decimate down sampler'''
         if self.samplerate == target_rate:
             return self
         else:
-            print(f"Start resample: {time.perf_counter()}")
+            # print(f"Start resample: {time.perf_counter()}")
             audio = self.samples
             sr_orig = self.samplerate
             orig_len = len(audio)
@@ -262,7 +262,7 @@ class SoundProcessor:
             # Update state
             self.samples = resampled.astype(np.float32)
             self.samplerate = target_rate
-            print(f"Stop resample: {time.perf_counter()}")
+            # print(f"Stop resample: {time.perf_counter()}")
             return self 
     
 
@@ -271,8 +271,8 @@ class SoundProcessor:
         processed = np.clip(self.samples * 32768.0, -32768, 32767).astype(np.int16)
         return processed.tobytes()
         
-class SentencePieceTts:
-    def __init__(self, text: str, session: aiohttp.ClientSession, loop:asyncio.AbstractEventLoop, init_wait=0.0,base_url="http://192.168.137.1:8880"):
+class SentencePieceTts: #192.168.137.1
+    def __init__(self, text: str, session: aiohttp.ClientSession, loop:asyncio.AbstractEventLoop, init_wait=0.0,base_url="http://localhost:8880"):
         self.text = text
         self.session = session
         self.audio_buffer = b""
@@ -326,13 +326,12 @@ class SentencePieceTts:
 
             if len(result) > 0:
                 print(f"Give partially filled bytes: {time.perf_counter()}")
-            print(f"Outputting bytes:  [{len(result+padding)}] -------------------- PADDED")
+            # print(f"Outputting bytes:  [{len(result+padding)}] -------------------- PADDED")
 
             if self.is_complete_audio_fetched:
                 self.loop.call_soon_threadsafe(
                     self.is_all_audio_consumed.set()
                 )
-                
                 print(f"# CONSUMED ALL AUDIO: [{self.text}] <<<<<<<<<<<<<<<<<<<<<<<<<<")
 
             return result + padding
@@ -341,8 +340,7 @@ class SentencePieceTts:
             result = self.audio_buffer[:samples_required]
             self.audio_buffer = self.audio_buffer[samples_required:]
         
-            print(f"Give filled bytes: {time.perf_counter()}")
-            print(f"Outputing bytes: [{len(result)}]")
+            print(f"SentencePieceTts yield audio at [{time.perf_counter()}]: [{len(result)}] bytes")
             return result
 
 
@@ -396,17 +394,16 @@ class Mock():
                 return
 
             buffered_data = self.current_sentence_piece_tts.force_get_bytes(bytes_needed_for_resample(frames, 24000,16000))
-            print(len(buffered_data))
-            print(f"Start post process: {time.perf_counter()}")
+            # print(f"Start post process: {time.perf_counter()}")
             processed = (
                 SoundProcessor(buffered_data)
                 # .ring_mod(30)
                 .comb_filter(delay=75, feedback=0.4)
                 # .square_tremolo(10)
-                .resample(num_frames=frames, target_rate=16000)
+                .downsample(num_frames=frames, target_rate=16000)
                 .process()
             )
-            print(f"End post process: {time.perf_counter()}")
+            # print(f"End post process: {time.perf_counter()}")
             outdata[:] = processed
 
         self.speaker_output_stream = sd.RawOutputStream(
@@ -414,7 +411,7 @@ class Mock():
             channels=1,
             dtype="int16",
             callback=audio_callback,
-            device=0
+            # device=0
         )
         if start_now:
             self.speaker_output_stream.start()

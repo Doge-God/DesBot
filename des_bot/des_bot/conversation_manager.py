@@ -13,7 +13,7 @@ import math
 
 from .services.stt_session import SttSessionKyutai
 from .utils.llm_stream_parser import SemanticDeltaParser
-from .utils.output_audio_processor import AudioProcessorInt16, bytes_needed_for_resample
+from .utils.audio_processor import OutputAudioProcessorInt16, bytes_needed_for_resample, resample_linear
 
 from .baml_client.async_client import b
 from .baml_client.types import Message
@@ -226,11 +226,11 @@ class ConversationManagerNode(Node):
 
             buffered_data = self.current_sentence_piece_tts.force_get_bytes(bytes_needed_for_resample(frames, sr_in=24000, sr_out=16000))
             processed = (
-                AudioProcessorInt16(buffered_data)
+                OutputAudioProcessorInt16(buffered_data)
                 # .ring_mod(30)
                 .comb_filter(delay=75, feedback=0.3)
                 # .square_tremolo(10)
-                .resample(16000)
+                .downsample(num_frames=frames, target_rate=16000)
                 .process()
             )
             print(frames)
@@ -345,12 +345,11 @@ class ConversationManagerNode(Node):
             dtype='float32',
             callback=audio_callback):
 
+            # 1920 samples at 16000 hz ~ 120ms
             while self.state != ConversationState.SHUTTING_DOWN:
                 audio_data = await self.mic_audio_queue.get()
-                # Resample to 24kHz with librosa
-                resampled = librosa.resample(
-                    audio_data, orig_sr=self.SAMPLE_RATE, target_sr=self.TARGET_RATE
-                )  #.astype(np.float32)
+                # Resample to 24kHz NOT with librosa thing takes 2s
+                resampled = resample_linear(audio_data, orig_sr=16000, target_sr=24000)
 
                 # dont send audio when flushing
                 if not self.end_of_flush_time:

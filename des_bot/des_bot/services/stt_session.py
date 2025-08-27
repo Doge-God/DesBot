@@ -70,8 +70,7 @@ class SttSessionKyutai:
         await self.shutdown_complete.wait()
 
     async def send_audio(self, audio_data):
-        '''Process frame from audio stream. Assume 1920 chuck
-        size (80ms), 24kHz sample rate, mono channel.'''
+        '''Process frame from audio stream. Assume 24kHz sample rate, mono channel arraylike float32.'''
         # self.node_logger.info("sending audio")
         
         formatted = {"type": "Audio", "pcm": [float(x) for x in audio_data]}

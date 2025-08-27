@@ -1,4 +1,23 @@
 import numpy as np
+import librosa
+
+def bytes_needed_for_resample(n_frames_out, sr_in, sr_out, channels=1, sample_width_bytes=2):
+    """
+    Calculate number of bytes needed from input buffer to produce n_frames_out at fs_out.
+
+    Args:
+        n_frames_out (int): Number of output frames at fs_out
+        sr_in (int): Input sample rate (Hz)
+        sr_out (int): Output sample rate (Hz)
+        channels (int): Number of audio channels (default 1)
+        sample_width_bytes (int): Bytes per sample (int16=2)
+
+    Returns:
+        int: Number of bytes to pull from input buffer
+    """
+    n_frames_in = n_frames_out * sr_in / sr_out
+    return int(n_frames_in * channels * sample_width_bytes)
+
           
 class AudioProcessorInt16:
     def __init__(self, data: bytes, samplerate=24000):
@@ -130,6 +149,29 @@ class AudioProcessorInt16:
         self.samples = (1 - mix) * self.samples + mix * shifted
         return self
 
+    def resample(self, num_frames = None, target_rate=16000):
+        if self.samplerate == target_rate:
+            resampled = self.samples
+        else:
+            resampled = librosa.resample(
+                self.samples, 
+                orig_sr=self.samplerate, 
+                target_sr=target_rate,
+            )
+
+        if num_frames is not None:
+            current_len = resampled.shape[0]
+            if current_len > num_frames:
+                # Trim to the desired length
+                resampled = resampled[:num_frames]
+            elif current_len < num_frames:
+                # Pad with zeros to reach desired length
+                pad_width = num_frames - current_len
+                resampled = np.pad(resampled, (0, pad_width), mode='edge')
+
+        self.samples = resampled
+        self.samplerate = target_rate
+        return self
 
     def process(self) -> bytes:
         # Convert back to PCM16

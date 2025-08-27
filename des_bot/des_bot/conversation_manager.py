@@ -13,7 +13,7 @@ import math
 
 from .services.stt_session import SttSessionKyutai
 from .utils.llm_stream_parser import SemanticDeltaParser
-from .utils.output_audio_processor import AudioProcessorInt16
+from .utils.output_audio_processor import AudioProcessorInt16, bytes_needed_for_resample
 
 from .baml_client.async_client import b
 from .baml_client.types import Message
@@ -224,20 +224,25 @@ class ConversationManagerNode(Node):
                 outdata[:] = b'\x00' * frames*2 #16bit frames: 
                 return
 
-            buffered_data = self.current_sentence_piece_tts.force_get_samples(frames*2)
+            buffered_data = self.current_sentence_piece_tts.force_get_bytes(bytes_needed_for_resample(frames, sr_in=24000, sr_out=16000))
             processed = (
                 AudioProcessorInt16(buffered_data)
                 # .ring_mod(30)
                 .comb_filter(delay=75, feedback=0.3)
                 # .square_tremolo(10)
+                .resample(16000)
                 .process()
             )
+            print(frames)
+            print(len(processed))
             outdata[:] = processed
+
         self.speaker_output_stream = sd.RawOutputStream(
-            samplerate=24000,  
+            samplerate=16000,  
             channels=1,
             dtype="int16",
-            callback=audio_callback
+            callback=audio_callback,
+            device=0
         )
         self.speaker_output_stream.start()
         #-------------------------------------------------------------------------

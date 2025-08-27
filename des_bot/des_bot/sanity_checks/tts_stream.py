@@ -1,7 +1,9 @@
+import librosa
 import sounddevice as sd, time
 import numpy as np
 import wave
 import asyncio
+import resampy
 
 # client = OpenAI(
 #     base_url="http://localhost:8880/v1", api_key="not-needed"
@@ -82,6 +84,26 @@ class SentencePiece(NamedTuple):
 
 
 import aiohttp
+
+def bytes_needed_for_resample(n_frames_out, sr_in, sr_out, channels=1, sample_width_bytes=2):
+    """
+    Calculate number of bytes needed from input buffer to produce n_frames_out at fs_out.
+
+    Args:
+        n_frames_out (int): Number of output frames at fs_out
+        sr_in (int): Input sample rate (Hz)
+        sr_out (int): Output sample rate (Hz)
+        channels (int): Number of audio channels (default 1)
+        sample_width_bytes (int): Bytes per sample (int16=2)
+
+    Returns:
+        int: Number of bytes to pull from input buffer
+    """
+    n_frames_in = int(n_frames_out * sr_in / sr_out)
+    if n_frames_in % 2 != 0:
+        n_frames_in += 1
+    
+    return int(n_frames_in * channels * sample_width_bytes)
         
 class SoundProcessor:
     def __init__(self, data: bytes, samplerate=24000):
@@ -212,7 +234,37 @@ class SoundProcessor:
                             np.arange(len(shifted)), shifted)
         self.samples = (1 - mix) * self.samples + mix * shifted
         return self
+    
+    def resample(self, num_frames = None, target_rate=16000):
+        if self.samplerate == target_rate:
+            return self
+        else:
+            print(f"Start resample: {time.perf_counter()}")
+            audio = self.samples
+            sr_orig = self.samplerate
+            orig_len = len(audio)
 
+            # Determine number of frames if not provided
+            if num_frames is None:
+                duration = orig_len / sr_orig
+                num_frames = int(round(duration * target_rate))
+
+            # Calculate indices in the original audio
+            indices = np.linspace(0, orig_len - 1, num_frames)
+
+            # Linear interpolation
+            left_idx = np.floor(indices).astype(int)
+            right_idx = np.ceil(indices).astype(int)
+            right_idx = np.clip(right_idx, 0, orig_len - 1)
+            alpha = indices - left_idx
+            resampled = (1 - alpha) * audio[left_idx] + alpha * audio[right_idx]
+
+            # Update state
+            self.samples = resampled.astype(np.float32)
+            self.samplerate = target_rate
+            print(f"Stop resample: {time.perf_counter()}")
+            return self 
+    
 
     def process(self) -> bytes:
         # Convert back to PCM16
@@ -264,7 +316,7 @@ class SentencePieceTts:
         self.is_complete_audio_fetched = True
         print(f"^ Done fetch: [{self.text}]. Got [{len(self.audio_buffer)}] bytes")
 
-    def force_get_samples(self, samples_required:int):
+    def force_get_bytes(self, samples_required:int):
         '''Get x samples, indicate if all audio generated is emptied with this read.'''
         if len(self.audio_buffer) < samples_required:
             # Not enough samples, return what we have and pad with zeros
@@ -272,6 +324,8 @@ class SentencePieceTts:
             padding = b'\x00' * (samples_required - len(self.audio_buffer))
             self.audio_buffer = b''
 
+            if len(result) > 0:
+                print(f"Give partially filled bytes: {time.perf_counter()}")
             print(f"Outputting bytes:  [{len(result+padding)}] -------------------- PADDED")
 
             if self.is_complete_audio_fetched:
@@ -287,7 +341,7 @@ class SentencePieceTts:
             result = self.audio_buffer[:samples_required]
             self.audio_buffer = self.audio_buffer[samples_required:]
         
-            print(time.perf_counter())
+            print(f"Give filled bytes: {time.perf_counter()}")
             print(f"Outputing bytes: [{len(result)}]")
             return result
 
@@ -311,7 +365,7 @@ class Mock():
         self.make_audio_stream()
 
         
-        print(time.perf_counter())
+        print(f"Started requesting: {time.perf_counter()}")
         self.sentence_piece_tts_queue.put_nowait(SentencePieceTts("This is the first sentence.", self.tts_session, asyncio.get_running_loop()))
         self.sentence_piece_tts_queue.put_nowait(SentencePieceTts("This is the second sentence.", self.tts_session, asyncio.get_running_loop(),init_wait=1))
         self.sentence_piece_tts_queue.put_nowait(SentencePieceTts("This is the third sentence.", self.tts_session, asyncio.get_running_loop(),init_wait=2))
@@ -333,7 +387,7 @@ class Mock():
                 print("Recieved. CONTINUE----------------------------------------------------------------")
 
     def make_audio_stream(self, start_now=True):
-        def audio_callback(outdata, frames, time, status):
+        def audio_callback(outdata, frames, _ , status):
             '''ASSUME int16 audio: each frame = 16bit (2bytes)'''
             if status:
                 print("Audio callback status:", status)
@@ -341,21 +395,26 @@ class Mock():
                 outdata[:] = b'\x00' * frames*2 #16bit frames: 
                 return
 
-            buffered_data = self.current_sentence_piece_tts.force_get_samples(frames*2)
+            buffered_data = self.current_sentence_piece_tts.force_get_bytes(bytes_needed_for_resample(frames, 24000,16000))
+            print(len(buffered_data))
+            print(f"Start post process: {time.perf_counter()}")
             processed = (
                 SoundProcessor(buffered_data)
                 # .ring_mod(30)
                 .comb_filter(delay=75, feedback=0.4)
                 # .square_tremolo(10)
+                .resample(num_frames=frames, target_rate=16000)
                 .process()
             )
+            print(f"End post process: {time.perf_counter()}")
             outdata[:] = processed
 
         self.speaker_output_stream = sd.RawOutputStream(
-            samplerate=24000,  
+            samplerate=16000,  
             channels=1,
             dtype="int16",
-            callback=audio_callback
+            callback=audio_callback,
+            device=0
         )
         if start_now:
             self.speaker_output_stream.start()

@@ -51,7 +51,7 @@ class SentencePieceTts:
         finally:
             pass
 
-    def force_get_samples(self, samples_required:int):
+    def force_get_bytes(self, samples_required:int):
         '''Get x samples, indicate if all audio generated is emptied with this read.'''
         if len(self.audio_buffer) < samples_required:
             # Not enough samples, return what we have and pad with zeros

@@ -4,7 +4,7 @@ sudo usermod -a -G spi,gpio,i2c pi
 
 python3 des_bot/des_bot/utils/tuning.py -r
 python3 des_bot/des_bot/utils/tuning.py AGCONOFF 0
-python3 des_bot/des_bot/utils/tuning.py AGCGAIN 13
+python3 des_bot/des_bot/utils/tuning.py AGCGAIN 15
 python3 des_bot/des_bot/utils/tuning.py -r
 
 

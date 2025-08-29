@@ -62,11 +62,12 @@ class SentencePieceTts:
             # print(f"Outputting bytes:  [{len(result+padding)}] -------------------- PADDED")
 
             if self.is_complete_audio_fetched:
+      
                 self.loop.call_soon_threadsafe(
-                    self.is_all_audio_consumed.set()
+                    self.is_all_audio_consumed.set
                 )
-                
-                print(f"# CONSUMED ALL AUDIO: [{self.text[:20]}..]")
+    
+                # print(f"# CONSUMED ALL AUDIO: [{self.text[:20]}..]")
 
             return result + padding
         else:

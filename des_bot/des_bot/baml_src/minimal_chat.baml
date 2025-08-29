@@ -14,7 +14,7 @@ class StopTool {
         when the user indicate clear intention to stop the conversation
     "#) @stream.done
     response string @description(#"
-        indicate to the user that the conversation is stopping
+        indicate clearly to the user that the conversation is stopping
     "#)
 }
 

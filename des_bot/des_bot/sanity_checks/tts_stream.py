@@ -330,7 +330,7 @@ class SentencePieceTts: #192.168.137.1
 
             if self.is_complete_audio_fetched:
                 self.loop.call_soon_threadsafe(
-                    self.is_all_audio_consumed.set()
+                    self.is_all_audio_consumed.set
                 )
                 print(f"# CONSUMED ALL AUDIO: [{self.text}] <<<<<<<<<<<<<<<<<<<<<<<<<<")
 

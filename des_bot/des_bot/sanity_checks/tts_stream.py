@@ -272,7 +272,7 @@ class SoundProcessor:
         return processed.tobytes()
         
 class SentencePieceTts: #192.168.137.1
-    def __init__(self, text: str, session: aiohttp.ClientSession, loop:asyncio.AbstractEventLoop, init_wait=0.0,base_url="http://localhost:8880"):
+    def __init__(self, text: str, session: aiohttp.ClientSession, loop:asyncio.AbstractEventLoop, init_wait=0.0,base_url="http://192.168.137.1:8880"):
         self.text = text
         self.session = session
         self.audio_buffer = b""
@@ -288,7 +288,7 @@ class SentencePieceTts: #192.168.137.1
     async def _fetch(self):
         payload = {
             "input": self.text,
-            "voice": "bf_v0isabella",
+            "voice": "bf_v0isabella", #bf_v0isabella
             "response_format": "pcm",
             "speed": 1.1,
             "stream": True,
@@ -369,7 +369,7 @@ class Mock():
         self.sentence_piece_tts_queue.put_nowait(SentencePieceTts("This is the third sentence.", self.tts_session, asyncio.get_running_loop(),init_wait=2))
         self.sentence_piece_tts_queue.put_nowait(SentencePieceTts("This is the fourth sentence.", self.tts_session, asyncio.get_running_loop(),init_wait=3))
         self.sentence_piece_tts_queue.put_nowait(SentencePieceTts("This is the fifth sentence.", self.tts_session, asyncio.get_running_loop(),init_wait=4))
-        self.sentence_piece_tts_queue.put_nowait(SentencePieceTts("This is the sixth sentence.", self.tts_session, asyncio.get_running_loop(),init_wait=5))
+        self.sentence_piece_tts_queue.put_nowait(SentencePieceTts("It was a matter of chance that I should have rented a house in one of the strangest communities in North America. It was on that slender riotous island which extends itself due east of New York and where there are, among other natural curiosities, two unusual formations of land. Twenty miles from the city a pair of enormous eggs, identical in contour and separated only by a courtesy bay, jut out into the most domesticated body of salt water in the Western Hemisphere, the great wet barnyard of Long Island Sound. They are not perfect ovals—like the egg in the Columbus story they are both crushed flat at the contact end—but their physical resemblance must be a source of perpetual confusion to the gulls that fly overhead. To the wingless a more arresting phenomenon is their dissimilarity in every particular except shape and size.", self.tts_session, asyncio.get_running_loop(),init_wait=5))
         
 
 
@@ -398,7 +398,7 @@ class Mock():
             processed = (
                 SoundProcessor(buffered_data)
                 # .ring_mod(30)
-                .comb_filter(delay=75, feedback=0.4)
+                # .comb_filter(delay=75, feedback=0.4)
                 # .square_tremolo(10)
                 .downsample(num_frames=frames, target_rate=16000)
                 .process()
@@ -411,7 +411,7 @@ class Mock():
             channels=1,
             dtype="int16",
             callback=audio_callback,
-            # device=0
+            device=0
         )
         if start_now:
             self.speaker_output_stream.start()
@@ -422,7 +422,7 @@ class Mock():
 
 async def main():
     Mock()
-    await asyncio.sleep(10)
+    await asyncio.sleep(20)
 
 asyncio.run(main())
 

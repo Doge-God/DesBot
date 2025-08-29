@@ -1,0 +1,70 @@
+2025-08-28T18:41:32.627 [BAML INFO] Function MinimalChatAgent:
+    Client: MistralInstruct (mistral-small3.2:24b-instruct-2506-q4_K_M) - 1339ms. StopReason: stop. Tokens(in/out): unknown/unknown
+    ---PROMPT---
+    system: You are a minimal chat agent. 
+    Only reply with given format and never raw strings. 
+    
+    Answer in JSON using any of these schemas:
+    {
+      // to reply to the user with a message.
+      action_name: "reply",
+      response: string,
+    } or {
+      // when the user indicate clear intention to stop the conversation
+      action_name: "stop",
+      // indicate to the user that the conversation is stopping
+      response: string,
+    }
+    
+    Messages:
+    [{
+        "content": "Give you something to name.",
+        "role": "user",
+    }, {
+        "content": "What would you like me to name?",
+        "role": "assistant",
+    }, {
+        "content": "Yourself.",
+        "role": "user",
+    }, {
+        "content": "Thank you! I'm happy you're considering. A name that reflects my function would be AIda, with 'AI' representing Artificial Intelligence and 'da' representing Data. Would you like to suggest a different name or stick with this one?",
+        "role": "assistant",
+    }, {
+        "content": "Don, tell me more human.",
+        "role": "user",
+    }, {
+        "content": "I understand. Let's go with Don, as it's shorter and simpler.",
+        "role": "assistant",
+    }, {
+        "content": "Somebody else?",
+        "role": "user",
+    }, {
+        "content": "Who else would you like me to tell them about?",
+        "role": "assistant",
+    }, {
+        "content": "You know, give me another name.",
+        "role": "user",
+    }, {
+        "content": "eSure, how about 'Chip' which is short for 'Artificial Intelligence Chip'?",
+        "role": "assistant",
+    }, {
+        "content": "Shoot this pretty good. I'm on the line. Give me more.",
+        "role": "user",
+    }, {
+        "content": "Here are two more suggestions: 'Nexa' which means next generation assistant, and 'Bene', inspired by 'benevolent'.",
+        "role": "assistant",
+    }, {
+        "content": "Can you repeat the names you just gave?",
+        "role": "user",
+    }]
+    
+    ---LLM REPLY---
+    {
+      "action_name": "reply",
+      "response": "Of course! I suggested 'Chip', 'Nexa', and 'Bene'."
+    }
+    ---Parsed Response (class ReplyTool)---
+    {
+      "action_name": "reply",
+      "response": "Of course! I suggested 'Chip', 'Nexa', and 'Bene'."
+    }

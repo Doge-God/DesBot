@@ -3,7 +3,7 @@ from typing import List
 
 
 class SemanticDeltaParser:
-    def __init__(self, separators: str = ".!?;:,", min_len = 50):
+    def __init__(self, separators: str = ".!?;:,", min_len = 20):
         self.separators = set(separators)
         self.min_len = min_len
         self.seen = ""   # All processed so far

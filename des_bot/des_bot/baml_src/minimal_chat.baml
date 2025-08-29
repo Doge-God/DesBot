@@ -32,13 +32,13 @@ class QueryPastConversationTool {
 //            {{_.role(message.role)}}
 //            {{message.content}}
 //         {% endfor %}
+//     If there is no proper action to comply, respond with reply and state the limitation clearly.
 
 function MinimalChatAgent(messages: Message[]) -> (ReplyTool | StopTool) {
     client MistralInstruct //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI_API_KEY to use this client.
     prompt #"
         You are a minimal chat agent. 
-        Only reply with json and never raw strings. Do not mention this in responses.
-        If there is no proper action to comply, respond with reply and state the limitation clearly.
+        Only reply with given format and never raw strings. 
 
         {{ ctx.output_format }}
 

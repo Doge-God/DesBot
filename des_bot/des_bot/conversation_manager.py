@@ -3,10 +3,10 @@ import aiohttp
 import librosa
 import rclpy
 from rclpy.node import Node
-from enum import Flag, auto
+from enum import Enum, Flag, auto
 import numpy as np
 from dotenv import load_dotenv
-import sounddevice as sd
+import sounddevice as sd, time
 from typing import List, Optional, TYPE_CHECKING
 import math
 
@@ -33,7 +33,9 @@ class ConversationState(Flag):
     SHUTTING_DOWN = auto()
     #-----------------------------------------------
     ROBOT_TURN = ROBOT_RECIEVED | ROBOT_SPEAKING | ROBOT_USING_TOOLS
-    
+
+class StateChangeCases(Enum):
+    INTERRUPT_ROBOT = auto()
 
 class ChatHistory:
     def __init__(self):
@@ -45,6 +47,7 @@ class ConversationManagerNode(Node):
         self.get_logger().info('ConversationManagerNode has been started.')
         self.SAMPLE_RATE = 16000
         self.TARGET_RATE = 24000
+        self.MIN_USER_MESSAGE_GAP_SEC = 2.0
 
         
         # tasks ---------------------------------------------------------------------------
@@ -60,6 +63,7 @@ class ConversationManagerNode(Node):
         self.speaker_output_stream = None
         self.sentence_piece_tts_queue:Optional[asyncio.Queue["SentencePieceTts"]] = None
         self.current_sentence_piece_tts:Optional["SentencePieceTts"] = None
+        self.current_sentence_piece_tts_lock = asyncio.Lock()
 
         # conversation state, flag and buffers
         self.state = ConversationState.NO_CONVERSATION
@@ -69,6 +73,7 @@ class ConversationManagerNode(Node):
         self.is_llm_generation_complete = False
         self.end_of_flush_time = None
         '''Internal time for stt session: time for when text stream is guaranteed to be complete up to flush point.'''
+        self.last_user_word_heard_stamp = None
 
         asyncio.run(self.run_conversation())
 
@@ -88,6 +93,12 @@ class ConversationManagerNode(Node):
             return True
         else:
             return False
+    
+    def should_interrupt_robot(self):
+        if (self.state in ConversationState.ROBOT_TURN and self.stt_word_buffer):
+            return True
+        else:
+            return False
 
 
     async def handle_stt_triggered_state_change(self):
@@ -104,6 +115,16 @@ class ConversationManagerNode(Node):
                 self.end_of_flush_time = self.stt_session.current_time_sec + self.stt_session.delay_sec
                 for _ in range (num_frames):
                     await self.stt_session.send_audio(blank_audio)
+            
+            elif self.should_interrupt_robot():
+                t0 = time.perf_counter()
+                print(f"============ INTERRUPTED ROBOT ============")
+                self.robot_spoken_buffer.append("[INTERRUPTED]")
+                self.robot_response_task.cancel()
+                t1 = time.perf_counter()
+
+                print(f"Interrupted task in {[t1-t0]} ms")
+                self.state = ConversationState.USER_TURN
         
         # audio flushing in process
         else:
@@ -140,6 +161,7 @@ class ConversationManagerNode(Node):
                         break
                 print(f"^^ Finished sentence tts obj: [{self.current_sentence_piece_tts.text}] CONTINUE-------")
         finally:
+            self.current_sentence_piece_tts = None
             print(f"SPOKEN ENTIRE LLM RESPONSE.")            
 
     async def generate_response(self):
@@ -194,8 +216,11 @@ class ConversationManagerNode(Node):
                 while True:
                     sentence_piece_tts = self.sentence_piece_tts_queue.get_nowait()
                     sentence_piece_tts.fetch_task.cancel()
+                    sentence_piece_tts.audio_buffer = b""
+        
             except asyncio.QueueEmpty:
                 pass
+  
             raise
 
         finally:
@@ -220,22 +245,22 @@ class ConversationManagerNode(Node):
             '''ASSUME int16 audio: each frame = 16bit (2bytes)'''
             if status:
                 print("Audio callback status:", status)
-            if not self.current_sentence_piece_tts or self.current_sentence_piece_tts.is_all_audio_consumed.is_set():
+            current_tts = self.current_sentence_piece_tts
+            if not current_tts or current_tts.is_all_audio_consumed.is_set():
                 outdata[:] = b'\x00' * frames*2 #16bit frames: 
                 return
-
-            buffered_data = self.current_sentence_piece_tts.force_get_bytes(bytes_needed_for_resample(frames, sr_in=24000, sr_out=16000))
+            try:
+                buffered_data = current_tts.force_get_bytes(bytes_needed_for_resample(frames, sr_in=24000, sr_out=16000))
+            except:
+                outdata[:] = b'\x00' * frames*2 #16bit frames: 
+                return
             processed = (
                 OutputAudioProcessorInt16(buffered_data)
-                # .ring_mod(30)
-                .comb_filter(delay=75, feedback=0.3)
-                # .square_tremolo(10)
                 .downsample(num_frames=frames, target_rate=16000)
                 .process()
             )
-            print(frames)
-            print(len(processed))
             outdata[:] = processed
+
 
         self.speaker_output_stream = sd.RawOutputStream(
             samplerate=16000,  
@@ -333,17 +358,23 @@ class ConversationManagerNode(Node):
             this_loop = loop
 
         def audio_callback(data:np.ndarray, frames, time, status):
+            # get copy of mono channel data, drop all values < 0.2
+            data_copy = data[:,0].astype(np.float32).copy()
+            data_copy[np.abs(data_copy) < 0.01] = 0
             this_loop.call_soon_threadsafe(
-                # get copy of mono channel data
-                self.mic_audio_queue.put_nowait, data[:,0].astype(np.float32).copy()
+                
+                
+                self.mic_audio_queue.put_nowait, data_copy
             )
 
         with sd.InputStream(
-            samplerate=self.SAMPLE_RATE, 
-            channels=1, 
-            blocksize=1920,
-            dtype='float32',
-            callback=audio_callback):
+                samplerate=16000, 
+                channels=1, 
+                blocksize=1920,
+                dtype='float32',
+                callback=audio_callback,
+                device=0
+            ):
 
             # 1920 samples at 16000 hz ~ 120ms
             while self.state != ConversationState.SHUTTING_DOWN:
@@ -373,6 +404,7 @@ class ConversationManagerNode(Node):
                 self.stt_session.pause_predictor.value = 0
 
             self.stt_word_buffer.append(message.text)
+            self.last_user_word_heard_stamp = self.get_clock().now().nanoseconds
 
         self.get_logger().info("STT task finished.")
 

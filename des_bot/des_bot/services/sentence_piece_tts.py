@@ -42,12 +42,12 @@ class SentencePieceTts:
                     self.audio_buffer += chunk
 
             # trim off 300ms of end silence.
-            self.audio_buffer = self.audio_buffer[:-14400] # 24000 frames/s * 0.3s * 2(byte per frame)
+            self.audio_buffer = self.audio_buffer[:-4800] # 24000 frames/s * 0.1s * 2(byte per frame)
             self.is_complete_audio_fetched = True
-            print(f"^ Done fetch: [{self.text}]. Got [{len(self.audio_buffer)}] bytes")
+            print(f"^ Done fetch: [{self.text[:20]}..]. Got [{len(self.audio_buffer)}] bytes")
         except asyncio.CancelledError:
             self.is_complete_audio_fetched = True
-            print(f"^ Cancelled fetch: [{self.text}].")
+            print(f"^ Cancelled fetch: [{self.text[:20]}..].")
         finally:
             pass
 
@@ -59,14 +59,14 @@ class SentencePieceTts:
             padding = b'\x00' * (samples_required - len(self.audio_buffer))
             self.audio_buffer = b''
 
-            print(f"Outputting bytes:  [{len(result+padding)}] -------------------- PADDED")
+            # print(f"Outputting bytes:  [{len(result+padding)}] -------------------- PADDED")
 
             if self.is_complete_audio_fetched:
                 self.loop.call_soon_threadsafe(
                     self.is_all_audio_consumed.set()
                 )
                 
-                print(f"# CONSUMED ALL AUDIO: [{self.text}] <<<<<<<<<<<<<<<<<<<<<<<<<<")
+                print(f"# CONSUMED ALL AUDIO: [{self.text[:20]}..]")
 
             return result + padding
         else:
@@ -74,5 +74,5 @@ class SentencePieceTts:
             result = self.audio_buffer[:samples_required]
             self.audio_buffer = self.audio_buffer[samples_required:]
         
-            print(f"Outputing bytes: [{len(result)}]")
+            # print(f"Outputing bytes: [{len(result)}]")
             return result

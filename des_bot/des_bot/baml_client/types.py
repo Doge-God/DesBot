@@ -44,6 +44,8 @@ def all_succeeded(checks: typing.Dict[CheckName, Check]) -> bool:
 # Generated classes (5)
 # #########################################################################
 
+class Action(BaseModel):pass
+
 class Message(BaseModel):
     role: typing.Union[typing_extensions.Literal['user'], typing_extensions.Literal['assistant']]
     content: str
@@ -55,12 +57,6 @@ class QueryPastConversationTool(BaseModel):
 class ReplyTool(BaseModel):
     action_name: typing_extensions.Literal['reply']
     response: str
-
-class Resume(BaseModel):
-    name: str
-    email: str
-    experience: typing.List[str]
-    skills: typing.List[str]
 
 class StopTool(BaseModel):
     action_name: typing_extensions.Literal['stop']

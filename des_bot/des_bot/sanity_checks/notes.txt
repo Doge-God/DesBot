@@ -7,22 +7,3 @@ python3 des_bot/des_bot/utils/tuning.py AGCONOFF 0
 python3 des_bot/des_bot/utils/tuning.py AGCGAIN 15
 python3 des_bot/des_bot/utils/tuning.py -r
 
-
-python3 des_bot/des_bot/utils/tuning.py AGCMAXGAIN 10
-
-python3 des_bot/des_bot/utils/tuning.py AECNORM 2
-python3 des_bot/des_bot/utils/tuning.py AECFREEZEONOFF 0
-python3 des_bot/des_bot/utils/tuning.py NLATTENONOFF 0
-
-python3 des_bot/des_bot/utils/tuning.py -r
-
-
-
-pactl load-module module-echo-cancel
-pactl list modules short
-pulseaudio -k
-
-etc/pulse/default.pa
-load-module module-echo-cancel source_name=aec_source source_properties=device.description=aec_source sink_name=aec_sink sink_properties=device.description=aec_sink aec_method=webrtc channels=1
-set-default-source aec_source
-set-default-sink aec_sink

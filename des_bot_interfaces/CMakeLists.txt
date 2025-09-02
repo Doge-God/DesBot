@@ -20,6 +20,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RecFrameResult2.msg"
   "msg/RecFrameResult2Stamped.msg"
   "srv/ControlSttState.srv"
+  "srv/RunConversation.srv"
   DEPENDENCIES builtin_interfaces std_msgs
 )
 

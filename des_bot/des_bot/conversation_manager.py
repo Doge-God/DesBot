@@ -4,6 +4,7 @@ import aiohttp
 import librosa
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import String
 from enum import Enum, Flag, auto
 import numpy as np
 from dotenv import load_dotenv
@@ -22,30 +23,36 @@ from .baml_client.stream_types import ReplyTool, StopTool
 
 from .services.sentence_piece_tts import SentencePieceTts
 
+from des_bot_interfaces.srv import RunConversation
+
 load_dotenv()
 
 class ConversationState(Flag):
     NO_CONVERSATION = auto()
-    STARTING_UP = auto()
+    READY = auto()
+
     USER_TURN = auto()
     
     ROBOT_RECIEVED = auto()
+    ROBOT_RECALLING = auto()
     ROBOT_USING_TOOLS = auto()
     ROBOT_SPEAKING = auto()
 
     SHUTTING_DOWN = auto()
     #-----------------------------------------------
-    ROBOT_TURN = ROBOT_RECIEVED | ROBOT_SPEAKING | ROBOT_USING_TOOLS
+    ROBOT_TURN = ROBOT_RECIEVED | ROBOT_SPEAKING | ROBOT_USING_TOOLS | ROBOT_RECALLING
 
 class StateChangeCases(Enum):
-    BEGIN_NEW_CONVERSATION = auto()
+    CONVERSATION_INITIATED = auto()
 
     USER_FINISHED_SPEAKING = auto()
     '''Pulse detected in stt'''
 
+    ROBOT_STARTED_SPEAKING = auto()
+
     INTERRUPT_ROBOT = auto()
 
-    ROBOT_FINISHED_GENERATION = auto()
+    ROBOT_FINISHED_RESPONSE = auto()
     '''Either spoke all or task cancelled. CARE: edge case: user speak [unintended pause detect] [generation task begun] user speak'''
 
     ROBOT_ENDING_CONVERSATION = auto()
@@ -58,28 +65,33 @@ class StateChangeCases(Enum):
 class ConversationManagerNode(Node):
     def __init__(self):
         super().__init__('conversation_manager')
+        self.state_publisher = self.create_publisher(String, 'conversation_state', 10)
         self.get_logger().info('ConversationManagerNode has been started.')
+
+        # param TODO might be good to use ros param --------------------------------------------------
         self.SAMPLE_RATE = 16000
         self.TARGET_RATE = 24000
         self.MIN_USER_MESSAGE_GAP_SEC = 2
         self.MIN_TTS_REQUEST_GAP_SEC = 1.0
         
-        # tasks ---------------------------------------------------------------------------
+        # tasks --------------------------------------------------------------------------------------
+        self.conversation_task = None # <========= HIGHEST LEVEL TASK IN NODE
         self.robot_response_task = None
         self.mic_stream_task = None
         self.stt_stream_task = None
         '''Listents to STT server returns. e.g. transcribed words and audio events.'''
 
-        # queues & stream/connection management structures
-        self.stt_session:Optional[SttSessionKyutai] = None # this one has its own shutdown ---------------------------
+        # queues & stream/connection management structures--------------------------------------------
+        self.stt_session:Optional[SttSessionKyutai] = None # this one has its own shutdown 
         '''Manager for websocket connection and parses input from server'''
         self.tts_session = None
         self.speaker_output_stream = None
         self.sentence_piece_tts_queue:Optional[asyncio.Queue["SentencePieceTts"]] = None
         self.current_sentence_piece_tts:Optional["SentencePieceTts"] = None
         self.current_sentence_piece_tts_lock = Lock()
+        self.mic_audio_queue = asyncio.Queue()
 
-        # conversation state, flag and buffers
+        # conversation state, flag and buffers---------------------------------------------------------
         self.state = ConversationState.NO_CONVERSATION
         self.message_history:List[Message] = []
         self.stt_word_buffer = []
@@ -87,18 +99,45 @@ class ConversationManagerNode(Node):
         self.is_llm_generation_complete = False
         self.end_of_flush_time = None
         '''Internal time for stt session: time for when text stream is guaranteed to be complete up to flush point.'''
-        self.last_user_message_finish_stamp = None
-        '''For [user speak] [unintended pulse] [start gen] [user speak] edge case'''
         self.next_allowed_tts_request_stamp = None
+        self.last_interaction_stamp = None
+        '''Last time either user word heard / robot spoke something. Used for auto sleep.'''
+        self.last_user_word_heard_stamp = None
 
+        self.event_loop = asyncio.get_event_loop()
+
+        self.srv = self.create_service(
+            RunConversation,
+            'run_conversation',
+            self.run_conversation_callback
+        )
+
+        
+        # asyncio.run(self.run_conversation())
+        # print("ran through conversation cleanly")
+
+    ################################################################################################
+    ############## CONVERSATION CONTROL SERVICE CALLBACK ############################################
+    def run_conversation_callback(self, _ , response):
         asyncio.run(self.run_conversation())
+        response.chat_history = "bru"
+        return response
 
-        print("ran through conversation cleanly")
 
 
-
-    async def handle_state_change(self, state_change_case:StateChangeCases):
+    ################################################################################################
+    ############# State change handle ###############################################################      
+    async def handle_state_change(self, state_change_case:StateChangeCases,**kwargs):
         match state_change_case:
+            case StateChangeCases.CONVERSATION_INITIATED:
+                try:
+                    robot_reason = kwargs["robot_invoke_reason"]
+                except KeyError:
+                    robot_reason = None
+                await self.run_converstion_startup()
+                self.state = ConversationState.READY
+                self.conversation_task = asyncio.create_task(self.run_conversation(robot_reason))
+
             case StateChangeCases.USER_FINISHED_SPEAKING:
                 new_user_message = Message(role='user', content= " ".join(self.stt_word_buffer))
                 self.message_history.append(new_user_message)
@@ -107,8 +146,13 @@ class ConversationManagerNode(Node):
                 self.stt_word_buffer.clear()
                 self.end_of_flush_time = None
                 # try getting response
-                self.state = ConversationState.ROBOT_TURN
+                self.state = ConversationState.ROBOT_RECIEVED
+                self.state_publisher.publish(self.create_std_str_msg("ROBOT_RECIEVED"))
                 self.robot_response_task = asyncio.create_task(self.generate_response())
+            
+            case StateChangeCases.ROBOT_STARTED_SPEAKING:
+                self.state = ConversationState.ROBOT_SPEAKING
+                self.state_publisher.publish(self.create_std_str_msg("ROBOT_SPEAKING"))
                 
             case StateChangeCases.INTERRUPT_ROBOT:
                 self.get_logger().info(">> Interrupted robot")
@@ -118,9 +162,10 @@ class ConversationManagerNode(Node):
                         self.stt_word_buffer.insert(0, last_user_msg.content)
 
                 self.robot_spoken_buffer.append("[INTERRUPTED]")
-                self.robot_response_task.cancel() #this soon triggers ROBOT_FINISHED_GENERATION below
+                self.robot_response_task.cancel() 
+                await self.handle_state_change(StateChangeCases.ROBOT_FINISHED_RESPONSE)
 
-            case StateChangeCases.ROBOT_FINISHED_GENERATION:
+            case StateChangeCases.ROBOT_FINISHED_RESPONSE:
                 '''CAN be finishing naturally or interrupted and gen task cancelled.'''
                 # Consider edge case: user speak [unintended pause detect] [generation task begun] user speak, do not add robot response to history
                 if (self.get_clock().now().nanoseconds - self.last_user_word_heard_stamp) < self.MIN_USER_MESSAGE_GAP_SEC * 1e9:
@@ -134,24 +179,204 @@ class ConversationManagerNode(Node):
                 # All case: clear buffer and hand over to user
                 self.robot_spoken_buffer.clear()
                 self.state = ConversationState.USER_TURN
+                self.state_publisher.publish(self.create_std_str_msg("USER_TURN"))
 
             case StateChangeCases.ROBOT_ENDING_CONVERSATION:
                 self.state = ConversationState.SHUTTING_DOWN
+                self.state_publisher.publish(self.create_std_str_msg("SHUTTING_DOWN"))
                 try:
                     await self.stt_session.shutdown()
+                    await self.tts_session.close()
                 except Exception as e:
-                    self.get_logger().warning(str(e))
-                await self.tts_session.close()
-                
-                
-    
+                    self.get_logger().warning("Caught error when shutting down: "+str(e))
 
+                
+                # self.state = ConversationState.NO_CONVERSATION
+                # self.state_publisher.publish(self.create_std_str_msg("NO_CONVERSATION"))
+                         
+    
     def pop_last_message_of_role(self, role:str):
+        '''Get last messge from converation of given role & remove from history.'''
         for i in range(len(self.message_history)-1, -1, -1):
             if self.message_history[i].role == role:
                 return self.message_history.pop(i)
         return None
+    
+    def create_std_str_msg(self, message:str):
+        msg = String()
+        msg.data = message
+        return msg
 
+
+    ################################################################################################
+    ############# TTS Related Tools & tasks ###############################################################       
+    async def advance_sentence_piece_tts(self):
+        '''Loop to grab sentence piece tts objects from queue for playback.'''
+        try: # for cancellation
+            while self.state in ConversationState.ROBOT_TURN:
+                # grab from queue
+                new_current_sentence_piece_tts = await self.sentence_piece_tts_queue.get()
+
+                # swap out spent one with lock
+                with self.current_sentence_piece_tts_lock:
+                    self.current_sentence_piece_tts = new_current_sentence_piece_tts
+
+                # add to tracker & log
+                self.robot_spoken_buffer.append(self.current_sentence_piece_tts.text)
+                print(f"vv NEW sentence tts obj: [{self.current_sentence_piece_tts.text}]--------------------")
+
+                # update state
+                if self.state == ConversationState.ROBOT_RECIEVED:
+                    self.handle_state_change(StateChangeCases.ROBOT_STARTED_SPEAKING)
+
+                #wait for current sentence piece tts to finish
+                await self.current_sentence_piece_tts.is_all_audio_consumed.wait()
+                # before trying to wait for next sentence piece tts to be in queue, check if current
+                # one is the last sentence piece generated by llm
+                if self.sentence_piece_tts_queue.qsize() == 0:
+                    if self.is_llm_generation_complete:
+                        print(f"^^ Finished sentence tts obj: [{self.current_sentence_piece_tts.text}] CONTINUE-------")
+                        break
+
+        except asyncio.CancelledError:
+            with self.current_sentence_piece_tts_lock:
+                self.current_sentence_piece_tts = None
+               
+        finally:
+            self.current_sentence_piece_tts = None
+            print(f"SPOKEN ENTIRE LLM RESPONSE.")            
+
+    def queue_sentence_pieces_to_speak(self, pieces:List[str]):
+        '''Make SentencePieceTts objects from strings and queue them for processing, respects self.next_allowed_tts_request_stamp (should be reset per generation task.)'''   
+        for new_piece in pieces:              
+            now_stamp = self.get_clock().now().nanoseconds
+            # Request NOT allowed immediately: less than specified sec apart from previous request: needed to ensure fastkoko not drowning and degrade first audio time performance
+            if now_stamp <= self.next_allowed_tts_request_stamp:
+                delta_sec = (self.next_allowed_tts_request_stamp-now_stamp) / 1_000_000_000
+                self.sentence_piece_tts_queue.put_nowait(
+                    SentencePieceTts(new_piece, self.tts_session, asyncio.get_running_loop(), delta_sec)
+                )
+            # Request allowed, start fetching immediatly
+            else:
+                self.sentence_piece_tts_queue.put_nowait(
+                    SentencePieceTts(new_piece, self.tts_session, asyncio.get_running_loop() )
+                )
+            self.next_allowed_tts_request_stamp += self.MIN_TTS_REQUEST_GAP_SEC * 1_000_000_000
+    
+    ################################################################################################
+    ############# GENERATE RESPONSE ###############################################################  
+    async def generate_response(self):
+        """Get response from LLM and run tts."""
+        try:
+            # prepare llm related actions
+            stream = b.stream.MinimalChatAgent(self.message_history)
+            parser = SemanticDeltaParser()
+            self.is_llm_generation_complete = False
+
+            # prepare tts related actions
+            advance_sentence_piece_tts_task = asyncio.create_task(self.advance_sentence_piece_tts())
+            self.next_allowed_tts_request_stamp = self.get_clock().now().nanoseconds
+
+            # prepare for next state
+            ending_state_change_case = StateChangeCases.ROBOT_FINISHED_RESPONSE
+
+            # process streamed llm response
+            async for partial in stream:
+                if isinstance(partial,ReplyTool):
+                    if partial.response:
+                        ending_state_change_case = StateChangeCases.ROBOT_FINISHED_RESPONSE
+                        new_pieces, _ = parser.parse_new_input(partial.response) # IGNORE any final piece from llm not closed by separators 
+                        self.queue_sentence_pieces_to_speak(new_pieces)
+                
+                if isinstance(partial, StopTool):
+                    if partial.response:
+                        ending_state_change_case = StateChangeCases.ROBOT_ENDING_CONVERSATION
+                        new_pieces, _ = parser.parse_new_input(partial.response) # IGNORE any final piece from llm not closed by separators 
+                        self.queue_sentence_pieces_to_speak(new_pieces)
+                            
+        
+            self.is_llm_generation_complete = True
+            await asyncio.gather(advance_sentence_piece_tts_task)
+            await self.handle_state_change(ending_state_change_case)
+
+        except asyncio.CancelledError:
+        # when generation task is cancelled: cancel tts obj cycling task, empty sentence_piece_tts_queue
+            advance_sentence_piece_tts_task.cancel()
+            try:
+                while True:
+                    sentence_piece_tts = self.sentence_piece_tts_queue.get_nowait()
+                    sentence_piece_tts.fetch_task.cancel()
+                    sentence_piece_tts.audio_buffer = b""
+            except asyncio.QueueEmpty:
+                pass
+            # DOES NOT ADVANCE STATE!!!!!!!!
+            raise
+            
+    
+    ################################################################################################
+    ############# MIC & STT Tools & tasks ###############################################################  
+
+    async def run_mic_stream(self, loop:Optional[asyncio.AbstractEventLoop]=None):
+        '''Close by setting conversation state to shutting down'''
+        self.get_logger().info("Begin mic stream, sending data")
+        # Start the audio stream
+        
+        if not loop:
+            this_loop = asyncio.get_running_loop()
+        else:
+            this_loop = loop
+
+        def audio_callback(data:np.ndarray, frames, time, status):
+            # get copy of mono channel data, drop all values < 0.2
+            data_copy = data[:,0].astype(np.float32).copy()
+            data_copy[np.abs(data_copy) < 0.01] = 0
+            this_loop.call_soon_threadsafe(
+                self.mic_audio_queue.put_nowait, data_copy
+            )
+
+        with sd.InputStream(
+                samplerate=16000, 
+                channels=1, 
+                blocksize=1920,
+                dtype='float32',
+                callback=audio_callback,
+                device=0
+            ):
+
+            # 1920 samples at 16000 hz ~ 120ms
+            while self.state != ConversationState.SHUTTING_DOWN:
+                audio_data = await self.mic_audio_queue.get()
+                # Resample to 24kHz NOT with librosa thing takes 2s
+                resampled = resample_linear(audio_data, orig_sr=16000, target_sr=24000)
+
+                # dont send audio when flushing
+                try:
+                    if not self.end_of_flush_time:
+                        await self.stt_session.send_audio(resampled)
+                except Exception as e:
+                    self.get_logger().warning("Caught when sending audio: "+str(e))
+                
+                await self.tick_stt_events()
+
+        self.get_logger().info("Mic stream closed cleanly.")
+         
+    async def run_stt_stream(self):
+        '''closes by calling shutdown on stt_session instance'''
+        self.get_logger().info("Begin stt stream, listing for transcribed words")
+        if not self.stt_session:
+            raise RuntimeError("Trying to listen to stt response without instantiating object first.")
+        
+        # breaks gracefully when shutdown func called on stt_session
+        async for message in self.stt_session:
+            # first utterance in user turn, reset predictor value
+            if len(self.stt_word_buffer) == 0:
+                self.stt_session.pause_predictor.value = 0
+
+            self.stt_word_buffer.append(message.text)
+            self.last_user_word_heard_stamp = self.get_clock().now().nanoseconds
+
+        self.get_logger().info("STT task finished.")
+    
     def should_transition_user_to_robot(self):
         '''Is user turn, detected pause, and have some transcript'''
         if not self.stt_session:
@@ -193,113 +418,26 @@ class ConversationManagerNode(Node):
                 await self.handle_state_change(StateChangeCases.USER_FINISHED_SPEAKING)
 
     ################################################################################################
-    ############# TTS Related Tools ###############################################################       
-    async def advance_sentence_piece_tts(self):
-        '''Loop to grab sentence piece tts from queue for playback.'''
-        try: # for cancellation
-            while self.state in ConversationState.ROBOT_TURN:
-                # grab from queue
-                new_current_sentence_piece_tts = await self.sentence_piece_tts_queue.get()
-
-                # swap out spent one with lock
-                with self.current_sentence_piece_tts_lock:
-                    self.current_sentence_piece_tts = new_current_sentence_piece_tts
-
-                # add to tracker & log
-                self.robot_spoken_buffer.append(self.current_sentence_piece_tts.text)
-                print(f"vv NEW sentence tts obj: [{self.current_sentence_piece_tts.text}]--------------------")
-                #wait for current sentence piece tts to finish
-                await self.current_sentence_piece_tts.is_all_audio_consumed.wait()
-                # before trying to wait for next sentence piece tts to be in queue, check if current
-                # one is the last sentence piece generated by llm
-                if self.sentence_piece_tts_queue.qsize() == 0:
-                    if self.is_llm_generation_complete:
-                        print(f"^^ Finished sentence tts obj: [{self.current_sentence_piece_tts.text}] CONTINUE-------")
-                        break
-
-        except asyncio.CancelledError:
-            with self.current_sentence_piece_tts_lock:
-                self.current_sentence_piece_tts = None
-               
-        finally:
-            self.current_sentence_piece_tts = None
-            print(f"SPOKEN ENTIRE LLM RESPONSE.")            
-
-    def queue_sentence_pieces_to_speak(self, pieces:List[str]):
-        '''Queue sentence piece for tts, respects self.next_allowed_tts_request_stamp (should be reset per generation task.)'''   
-        for new_piece in pieces:              
-            now_stamp = self.get_clock().now().nanoseconds
-            # Request NOT allowed immediately: less than specified sec apart from previous request: needed to ensure fastkoko not drowning and degrade first audio time performance
-            if now_stamp <= self.next_allowed_tts_request_stamp:
-                delta_sec = (self.next_allowed_tts_request_stamp-now_stamp) / 1_000_000_000
-                self.sentence_piece_tts_queue.put_nowait(
-                    SentencePieceTts(new_piece, self.tts_session, asyncio.get_running_loop(), delta_sec)
-                )
-            # Request allowed, start fetching immediatly
-            else:
-                self.sentence_piece_tts_queue.put_nowait(
-                    SentencePieceTts(new_piece, self.tts_session, asyncio.get_running_loop() )
-                )
-            self.next_allowed_tts_request_stamp += self.MIN_TTS_REQUEST_GAP_SEC * 1_000_000_000
-
-    async def generate_response(self):
-        """Get response from LLM and run tts."""
-        try:
-            # prepare llm related actions
-            stream = b.stream.MinimalChatAgent(self.message_history)
-            parser = SemanticDeltaParser()
-            self.is_llm_generation_complete = False
-
-            # prepare tts related actions
-            advance_sentence_piece_tts_task = asyncio.create_task(self.advance_sentence_piece_tts())
-            self.next_allowed_tts_request_stamp = self.get_clock().now().nanoseconds
-
-            # prepare for next state
-            ending_state_change_case = StateChangeCases.ROBOT_FINISHED_GENERATION
-
-            # process streamed llm response
-            async for partial in stream:
-                if isinstance(partial,ReplyTool):
-                    if partial.response:
-                        ending_state_change_case = StateChangeCases.ROBOT_FINISHED_GENERATION
-                        new_pieces, _ = parser.parse_new_input(partial.response) # IGNORE any final piece from llm not closed by separators 
-                        self.queue_sentence_pieces_to_speak(new_pieces)
-                
-                if isinstance(partial, StopTool):
-                    if partial.response:
-                        ending_state_change_case = StateChangeCases.ROBOT_ENDING_CONVERSATION
-                        new_pieces, _ = parser.parse_new_input(partial.response) # IGNORE any final piece from llm not closed by separators 
-                        self.queue_sentence_pieces_to_speak(new_pieces)
-                            
-        
-            self.is_llm_generation_complete = True
-            await asyncio.gather(advance_sentence_piece_tts_task)
-
-        except asyncio.CancelledError:
-        # when generation task is cancelled: cancel tts obj cycling task, empty sentence_piece_tts_queue
-            advance_sentence_piece_tts_task.cancel()
-            try:
-                while True:
-                    sentence_piece_tts = self.sentence_piece_tts_queue.get_nowait()
-                    sentence_piece_tts.fetch_task.cancel()
-                    sentence_piece_tts.audio_buffer = b""
-        
-            except asyncio.QueueEmpty:
-                pass
-            raise
-
-        finally:
-            await self.handle_state_change(ending_state_change_case)
-    
+    ############# CONVERSATION LEVEL CONTROL ###############################################################  
     async def run_converstion_startup(self):
         '''Start connections, set up queues etc. NOT setting state flag.'''
+        if self.state != ConversationState.NO_CONVERSATION:
+            self.get_logger().warn("Tried starting conversation with one in progress already. Ignored.")
+            return
+
         self.get_logger().info("Starting conversation...")
         t0 = self.get_clock().now().nanoseconds
-
-        # initialize streams, tasks, queues etc etc.
-        self.mic_audio_queue = asyncio.Queue()
-        self.sentence_piece_tts_queue = asyncio.Queue()
-
+        
+        # networking sessions ---------------------------------
+        self.stt_session =  SttSessionKyutai(
+            node_clock=self.get_clock(),
+            node_logger=self.get_logger(),
+        )
+        await self.stt_session.start_up(
+            url="ws://192.168.137.1:8080/api/asr-streaming",
+            api_key="public_token"
+        )
+        self.tts_session = aiohttp.ClientSession()
         ## START TTS AUDIO STREAM ------------------------------------------------
         # Contiously try grabbing audio from current sentence piece tts.
         # Fill with silence in any other case
@@ -324,9 +462,6 @@ class ConversationManagerNode(Node):
                     .process()
                 )
                 outdata[:] = processed
-
-
-
         self.speaker_output_stream = sd.RawOutputStream(
             samplerate=16000,  
             channels=1,
@@ -336,22 +471,20 @@ class ConversationManagerNode(Node):
         )
         self.speaker_output_stream.start()
         #-------------------------------------------------------------------------
+        self.sentence_piece_tts_queue = asyncio.Queue()
+        self.current_sentence_piece_tts = None
+        self.current_sentence_piece_tts_lock = Lock()
+        self.mic_audio_queue = asyncio.Queue()
+
 
         self.message_history:List[Message] = []
         self.stt_word_buffer = []
         self.robot_spoken_buffer = []
+        self.is_llm_generation_complete = False
         self.end_of_flush_time = None
-        
-        # networking sessions ---------------------------------
-        self.stt_session =  SttSessionKyutai(
-            node_clock=self.get_clock(),
-            node_logger=self.get_logger(),
-        )
-        await self.stt_session.start_up(
-            url="ws://192.168.137.1:8080/api/asr-streaming",
-            api_key="public_token"
-        )
-        self.tts_session = aiohttp.ClientSession()
+        self.next_allowed_tts_request_stamp = None
+        self.last_interaction_stamp = self.get_clock().now().nanoseconds
+        self.last_user_word_heard_stamp = None
 
         t1 = self.get_clock().now().nanoseconds
         self.get_logger().info(f"Started Conversation. Readied in: {(t1-t0)/1e6:.2f} ms")
@@ -388,12 +521,7 @@ class ConversationManagerNode(Node):
         self.end_of_flush_time = None
 
     async def run_conversation(self, robot_invoke_reason=None):
-
-        if self.state != ConversationState.NO_CONVERSATION:
-            self.get_logger().warning("TRIED STARTING CONVERSATION IN WRONG STATE")
-            return
-
-        self.state = ConversationState.STARTING_UP
+        '''Main async function for handling a conversation.'''
         await self.run_converstion_startup()
 
         # run "Main" loops
@@ -413,77 +541,14 @@ class ConversationManagerNode(Node):
         self.get_logger().info("Conversation finished cleanly.")
 
 
-    async def run_mic_stream(self, loop:Optional[asyncio.AbstractEventLoop]=None):
-        '''Close by setting conversation state to shutting down'''
-        self.get_logger().info("Begin mic stream, sending data")
-        # Start the audio stream
-        
-        if not loop:
-            this_loop = asyncio.get_running_loop()
-        else:
-            this_loop = loop
-
-        def audio_callback(data:np.ndarray, frames, time, status):
-            # get copy of mono channel data, drop all values < 0.2
-            data_copy = data[:,0].astype(np.float32).copy()
-            data_copy[np.abs(data_copy) < 0.01] = 0
-            this_loop.call_soon_threadsafe(
-                self.mic_audio_queue.put_nowait, data_copy
-            )
-
-        with sd.InputStream(
-                samplerate=16000, 
-                channels=1, 
-                blocksize=1920,
-                dtype='float32',
-                callback=audio_callback,
-                device=0
-            ):
-
-            # 1920 samples at 16000 hz ~ 120ms
-            while self.state != ConversationState.SHUTTING_DOWN:
-                audio_data = await self.mic_audio_queue.get()
-                # Resample to 24kHz NOT with librosa thing takes 2s
-                resampled = resample_linear(audio_data, orig_sr=16000, target_sr=24000)
-
-                # dont send audio when flushing
-                try:
-                    if not self.end_of_flush_time:
-                        await self.stt_session.send_audio(resampled)
-                except Exception as e:
-                    self.get_logger().warning(str(e))
-                
-                await self.tick_stt_events()
-
-        self.get_logger().info("Mic stream closed cleanly.")
-         
-    async def run_stt_stream(self):
-        '''closes by calling shutdown on stt_session instance'''
-        self.get_logger().info("Begin stt stream, listing for transcribed words")
-        if not self.stt_session:
-            raise RuntimeError("Trying to listen to stt response without instantiating object first.")
-        
-        # breaks gracefully when shutdown func called on stt_session
-        async for message in self.stt_session:
-            # first utterance in user turn, reset predictor value
-            if len(self.stt_word_buffer) == 0:
-                self.stt_session.pause_predictor.value = 0
-
-            self.stt_word_buffer.append(message.text)
-            self.last_user_word_heard_stamp = self.get_clock().now().nanoseconds
-
-        self.get_logger().info("STT task finished.")
-    
-
-
 def main(args=None):
     rclpy.init(args=args)
     node = ConversationManagerNode()
-    try:
-        rclpy.spin(node)
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
+
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

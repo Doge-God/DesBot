@@ -16,6 +16,9 @@ from . import stream_types
 
 type_map = {
 
+    "types.Action": types.Action,
+    "stream_types.Action": stream_types.Action,
+
     "types.Message": types.Message,
     "stream_types.Message": stream_types.Message,
 
@@ -24,9 +27,6 @@ type_map = {
 
     "types.ReplyTool": types.ReplyTool,
     "stream_types.ReplyTool": stream_types.ReplyTool,
-
-    "types.Resume": types.Resume,
-    "stream_types.Resume": stream_types.Resume,
 
     "types.StopTool": types.StopTool,
     "stream_types.StopTool": stream_types.StopTool,

@@ -26,6 +26,8 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
 # Generated classes (5)
 # #########################################################################
 
+class Action(BaseModel):pass
+
 class Message(BaseModel):
     role: typing.Optional[typing.Union[str, str]] = None
     content: typing.Optional[str] = None
@@ -37,12 +39,6 @@ class QueryPastConversationTool(BaseModel):
 class ReplyTool(BaseModel):
     action_name: typing.Optional[str] = None
     response: typing.Optional[str] = None
-
-class Resume(BaseModel):
-    name: typing.Optional[str] = None
-    email: typing.Optional[str] = None
-    experience: typing.List[str]
-    skills: typing.List[str]
 
 class StopTool(BaseModel):
     action_name: typing.Optional[str] = None

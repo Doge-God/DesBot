@@ -28,17 +28,17 @@ class LlmResponseParser:
         result = self.__options.merge_options(baml_options).parse_response(function_name="DetectTranscriptionEnd", llm_response=llm_response, mode="request")
         return typing.cast(bool, result)
 
-    def ExtractResume(
-        self, llm_response: str, baml_options: BamlCallOptions = {},
-    ) -> types.Resume:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="ExtractResume", llm_response=llm_response, mode="request")
-        return typing.cast(types.Resume, result)
-
     def MinimalChatAgent(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> typing.Union["types.ReplyTool", "types.StopTool"]:
         result = self.__options.merge_options(baml_options).parse_response(function_name="MinimalChatAgent", llm_response=llm_response, mode="request")
         return typing.cast(typing.Union["types.ReplyTool", "types.StopTool"], result)
+
+    def ToolSelect(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> bool:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="ToolSelect", llm_response=llm_response, mode="request")
+        return typing.cast(bool, result)
 
     
 
@@ -54,16 +54,16 @@ class LlmStreamParser:
         result = self.__options.merge_options(baml_options).parse_response(function_name="DetectTranscriptionEnd", llm_response=llm_response, mode="stream")
         return typing.cast(bool, result)
 
-    def ExtractResume(
-        self, llm_response: str, baml_options: BamlCallOptions = {},
-    ) -> stream_types.Resume:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="ExtractResume", llm_response=llm_response, mode="stream")
-        return typing.cast(stream_types.Resume, result)
-
     def MinimalChatAgent(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> typing.Union["stream_types.ReplyTool", "stream_types.StopTool"]:
         result = self.__options.merge_options(baml_options).parse_response(function_name="MinimalChatAgent", llm_response=llm_response, mode="stream")
         return typing.cast(typing.Union["stream_types.ReplyTool", "stream_types.StopTool"], result)
+
+    def ToolSelect(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> bool:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="ToolSelect", llm_response=llm_response, mode="stream")
+        return typing.cast(bool, result)
 
     

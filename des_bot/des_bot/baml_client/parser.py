@@ -28,17 +28,23 @@ class LlmResponseParser:
         result = self.__options.merge_options(baml_options).parse_response(function_name="DetectTranscriptionEnd", llm_response=llm_response, mode="request")
         return typing.cast(bool, result)
 
-    def MinimalChatAgent(
+    def PrelimAgent(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> typing.Union["types.ReplyTool", "types.StopTool", "types.BookActivityTool", "types.SuggestActivityTool"]:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="PrelimAgent", llm_response=llm_response, mode="request")
+        return typing.cast(typing.Union["types.ReplyTool", "types.StopTool", "types.BookActivityTool", "types.SuggestActivityTool"], result)
+
+    def RespondAgent(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> typing.Union["types.ReplyTool", "types.StopTool"]:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="MinimalChatAgent", llm_response=llm_response, mode="request")
+        result = self.__options.merge_options(baml_options).parse_response(function_name="RespondAgent", llm_response=llm_response, mode="request")
         return typing.cast(typing.Union["types.ReplyTool", "types.StopTool"], result)
 
-    def ToolSelect(
+    def ToolSelectAgent(
         self, llm_response: str, baml_options: BamlCallOptions = {},
-    ) -> bool:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="ToolSelect", llm_response=llm_response, mode="request")
-        return typing.cast(bool, result)
+    ) -> typing.Union["types.GetEventsTool", "types.CheckPlantDataTool", "types.RecallTool", typing_extensions.Literal[False]]:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="ToolSelectAgent", llm_response=llm_response, mode="request")
+        return typing.cast(typing.Union["types.GetEventsTool", "types.CheckPlantDataTool", "types.RecallTool", typing_extensions.Literal[False]], result)
 
     
 
@@ -54,16 +60,22 @@ class LlmStreamParser:
         result = self.__options.merge_options(baml_options).parse_response(function_name="DetectTranscriptionEnd", llm_response=llm_response, mode="stream")
         return typing.cast(bool, result)
 
-    def MinimalChatAgent(
+    def PrelimAgent(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> typing.Union["stream_types.ReplyTool", "stream_types.StopTool", "stream_types.BookActivityTool", "stream_types.SuggestActivityTool"]:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="PrelimAgent", llm_response=llm_response, mode="stream")
+        return typing.cast(typing.Union["stream_types.ReplyTool", "stream_types.StopTool", "stream_types.BookActivityTool", "stream_types.SuggestActivityTool"], result)
+
+    def RespondAgent(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> typing.Union["stream_types.ReplyTool", "stream_types.StopTool"]:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="MinimalChatAgent", llm_response=llm_response, mode="stream")
+        result = self.__options.merge_options(baml_options).parse_response(function_name="RespondAgent", llm_response=llm_response, mode="stream")
         return typing.cast(typing.Union["stream_types.ReplyTool", "stream_types.StopTool"], result)
 
-    def ToolSelect(
+    def ToolSelectAgent(
         self, llm_response: str, baml_options: BamlCallOptions = {},
-    ) -> bool:
-        result = self.__options.merge_options(baml_options).parse_response(function_name="ToolSelect", llm_response=llm_response, mode="stream")
-        return typing.cast(bool, result)
+    ) -> typing.Union["stream_types.GetEventsTool", "stream_types.CheckPlantDataTool", "stream_types.RecallTool", bool]:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="ToolSelectAgent", llm_response=llm_response, mode="stream")
+        return typing.cast(typing.Union["stream_types.GetEventsTool", "stream_types.CheckPlantDataTool", "stream_types.RecallTool", bool], result)
 
     

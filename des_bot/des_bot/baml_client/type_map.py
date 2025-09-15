@@ -16,20 +16,29 @@ from . import stream_types
 
 type_map = {
 
-    "types.Action": types.Action,
-    "stream_types.Action": stream_types.Action,
+    "types.BookActivityTool": types.BookActivityTool,
+    "stream_types.BookActivityTool": stream_types.BookActivityTool,
+
+    "types.CheckPlantDataTool": types.CheckPlantDataTool,
+    "stream_types.CheckPlantDataTool": stream_types.CheckPlantDataTool,
+
+    "types.GetEventsTool": types.GetEventsTool,
+    "stream_types.GetEventsTool": stream_types.GetEventsTool,
 
     "types.Message": types.Message,
     "stream_types.Message": stream_types.Message,
 
-    "types.QueryPastConversationTool": types.QueryPastConversationTool,
-    "stream_types.QueryPastConversationTool": stream_types.QueryPastConversationTool,
+    "types.RecallTool": types.RecallTool,
+    "stream_types.RecallTool": stream_types.RecallTool,
 
     "types.ReplyTool": types.ReplyTool,
     "stream_types.ReplyTool": stream_types.ReplyTool,
 
     "types.StopTool": types.StopTool,
     "stream_types.StopTool": stream_types.StopTool,
+
+    "types.SuggestActivityTool": types.SuggestActivityTool,
+    "stream_types.SuggestActivityTool": stream_types.SuggestActivityTool,
 
 
 }

@@ -101,7 +101,7 @@ class SttSessionKyutai:
                         self.node_logger.info(f"word: {stt_message.text}")
                         yield stt_message
                     case SttStepMessage():
-                        # self.node_logger.info(str(stt_message.prs[2]))
+                        self.node_logger.info(str(stt_message.prs[2]))
                         self.current_time_sec += self.frame_time_sec
                         if steps_to_wait > 0:
                             steps_to_wait -= 1

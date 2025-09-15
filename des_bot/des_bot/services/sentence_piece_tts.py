@@ -2,6 +2,9 @@ import aiohttp
 import asyncio
 import sounddevice as time
 
+class SentencePiecePoisonPill:
+    pass
+
 class SentencePieceTts:
     def __init__(self, text: str, session: aiohttp.ClientSession, loop:asyncio.AbstractEventLoop, init_wait=0.0,base_url="http://192.168.137.1:8880"):
         self.text = text
@@ -13,7 +16,7 @@ class SentencePieceTts:
         self.init_wait = init_wait
         self.base_url = base_url
 
-        self.fetch_task = asyncio.create_task(self._fetch())
+        self.fetch_task = asyncio.run_coroutine_threadsafe(self._fetch(), self.loop)
 
     async def _fetch(self):
         try:

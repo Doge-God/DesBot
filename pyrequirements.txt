@@ -20,3 +20,4 @@ python-dotenv
 sounddevice
 resampy
 https
+python-statemachine

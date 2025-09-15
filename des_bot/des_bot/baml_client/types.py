@@ -41,18 +41,26 @@ def all_succeeded(checks: typing.Dict[CheckName, Check]) -> bool:
 # #########################################################################
 
 # #########################################################################
-# Generated classes (5)
+# Generated classes (8)
 # #########################################################################
 
-class Action(BaseModel):pass
+class BookActivityTool(BaseModel):
+    action_name: typing_extensions.Literal['book_activity']
+    activity: str
+
+class CheckPlantDataTool(BaseModel):
+    action_name: typing_extensions.Literal['check_plant_data']
+
+class GetEventsTool(BaseModel):
+    action_name: typing_extensions.Literal['get_events']
 
 class Message(BaseModel):
-    role: typing.Union[typing_extensions.Literal['user'], typing_extensions.Literal['assistant']]
+    role: typing.Union[typing_extensions.Literal['user'], typing_extensions.Literal['assistant'], typing_extensions.Literal['tool']]
     content: str
 
-class QueryPastConversationTool(BaseModel):
-    action_name: typing_extensions.Literal['search_past_conversation']
-    search_phrases: typing.List[str]
+class RecallTool(BaseModel):
+    action_name: typing_extensions.Literal['recall']
+    search_phrase: str
 
 class ReplyTool(BaseModel):
     action_name: typing_extensions.Literal['reply']
@@ -61,6 +69,10 @@ class ReplyTool(BaseModel):
 class StopTool(BaseModel):
     action_name: typing_extensions.Literal['stop']
     response: str
+
+class SuggestActivityTool(BaseModel):
+    action_name: typing_extensions.Literal['suggest_activity']
+    description: str
 
 # #########################################################################
 # Generated type aliases (0)

@@ -20,7 +20,7 @@ from .globals import DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIM
 class TypeBuilder(type_builder.TypeBuilder):
     def __init__(self):
         super().__init__(classes=set(
-          ["Action","Message","QueryPastConversationTool","ReplyTool","StopTool",]
+          ["BookActivityTool","CheckPlantDataTool","GetEventsTool","Message","RecallTool","ReplyTool","StopTool","SuggestActivityTool",]
         ), enums=set(
           []
         ), runtime=DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIME)
@@ -31,20 +31,28 @@ class TypeBuilder(type_builder.TypeBuilder):
 
 
     # #########################################################################
-    # Generated classes 5
+    # Generated classes 8
     # #########################################################################
 
     @property
-    def Action(self) -> "ActionViewer":
-        return ActionViewer(self)
+    def BookActivityTool(self) -> "BookActivityToolViewer":
+        return BookActivityToolViewer(self)
+
+    @property
+    def CheckPlantDataTool(self) -> "CheckPlantDataToolViewer":
+        return CheckPlantDataToolViewer(self)
+
+    @property
+    def GetEventsTool(self) -> "GetEventsToolViewer":
+        return GetEventsToolViewer(self)
 
     @property
     def Message(self) -> "MessageViewer":
         return MessageViewer(self)
 
     @property
-    def QueryPastConversationTool(self) -> "QueryPastConversationToolViewer":
-        return QueryPastConversationToolViewer(self)
+    def RecallTool(self) -> "RecallToolViewer":
+        return RecallToolViewer(self)
 
     @property
     def ReplyTool(self) -> "ReplyToolViewer":
@@ -54,6 +62,10 @@ class TypeBuilder(type_builder.TypeBuilder):
     def StopTool(self) -> "StopToolViewer":
         return StopToolViewer(self)
 
+    @property
+    def SuggestActivityTool(self) -> "SuggestActivityToolViewer":
+        return SuggestActivityToolViewer(self)
+
 
 
 # #########################################################################
@@ -62,25 +74,25 @@ class TypeBuilder(type_builder.TypeBuilder):
 
 
 # #########################################################################
-# Generated classes 5
+# Generated classes 8
 # #########################################################################
 
-class ActionAst:
+class BookActivityToolAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
-        self._bldr = _tb.class_("Action")
-        self._properties: typing.Set[str] = set([  ])
-        self._props = ActionProperties(self._bldr, self._properties)
+        self._bldr = _tb.class_("BookActivityTool")
+        self._properties: typing.Set[str] = set([  "action_name",  "activity",  ])
+        self._props = BookActivityToolProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
         return self._bldr.field()
 
     @property
-    def props(self) -> "ActionProperties":
+    def props(self) -> "BookActivityToolProperties":
         return self._props
 
 
-class ActionViewer(ActionAst):
+class BookActivityToolViewer(BookActivityToolAst):
     def __init__(self, tb: type_builder.TypeBuilder):
         super().__init__(tb)
 
@@ -90,12 +102,98 @@ class ActionViewer(ActionAst):
     
 
 
-class ActionProperties:
+class BookActivityToolProperties:
     def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
         self.__bldr = bldr
         self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
 
     
+    
+    @property
+    def action_name(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("action_name"))
+    
+    @property
+    def activity(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("activity"))
+    
+    
+
+
+class CheckPlantDataToolAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("CheckPlantDataTool")
+        self._properties: typing.Set[str] = set([  "action_name",  ])
+        self._props = CheckPlantDataToolProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "CheckPlantDataToolProperties":
+        return self._props
+
+
+class CheckPlantDataToolViewer(CheckPlantDataToolAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class CheckPlantDataToolProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def action_name(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("action_name"))
+    
+    
+
+
+class GetEventsToolAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("GetEventsTool")
+        self._properties: typing.Set[str] = set([  "action_name",  ])
+        self._props = GetEventsToolProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "GetEventsToolProperties":
+        return self._props
+
+
+class GetEventsToolViewer(GetEventsToolAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class GetEventsToolProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def action_name(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("action_name"))
     
     
 
@@ -143,22 +241,22 @@ class MessageProperties:
     
 
 
-class QueryPastConversationToolAst:
+class RecallToolAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
-        self._bldr = _tb.class_("QueryPastConversationTool")
-        self._properties: typing.Set[str] = set([  "action_name",  "search_phrases",  ])
-        self._props = QueryPastConversationToolProperties(self._bldr, self._properties)
+        self._bldr = _tb.class_("RecallTool")
+        self._properties: typing.Set[str] = set([  "action_name",  "search_phrase",  ])
+        self._props = RecallToolProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
         return self._bldr.field()
 
     @property
-    def props(self) -> "QueryPastConversationToolProperties":
+    def props(self) -> "RecallToolProperties":
         return self._props
 
 
-class QueryPastConversationToolViewer(QueryPastConversationToolAst):
+class RecallToolViewer(RecallToolAst):
     def __init__(self, tb: type_builder.TypeBuilder):
         super().__init__(tb)
 
@@ -168,7 +266,7 @@ class QueryPastConversationToolViewer(QueryPastConversationToolAst):
     
 
 
-class QueryPastConversationToolProperties:
+class RecallToolProperties:
     def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
         self.__bldr = bldr
         self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
@@ -180,8 +278,8 @@ class QueryPastConversationToolProperties:
         return type_builder.ClassPropertyViewer(self.__bldr.property("action_name"))
     
     @property
-    def search_phrases(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("search_phrases"))
+    def search_phrase(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("search_phrase"))
     
     
 
@@ -268,6 +366,49 @@ class StopToolProperties:
     @property
     def response(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("response"))
+    
+    
+
+
+class SuggestActivityToolAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("SuggestActivityTool")
+        self._properties: typing.Set[str] = set([  "action_name",  "description",  ])
+        self._props = SuggestActivityToolProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "SuggestActivityToolProperties":
+        return self._props
+
+
+class SuggestActivityToolViewer(SuggestActivityToolAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class SuggestActivityToolProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def action_name(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("action_name"))
+    
+    @property
+    def description(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("description"))
     
     
 

@@ -91,36 +91,51 @@ class BamlAsyncClient:
                 "transcription": transcription,
             })
             return typing.cast(bool, result.cast_to(types, types, stream_types, False, __runtime__))
-    async def MinimalChatAgent(self, messages: typing.List["types.Message"],
+    async def PrelimAgent(self, messages: typing.List["types.Message"],activities: str,
+        baml_options: BamlCallOptions = {},
+    ) -> typing.Union["types.ReplyTool", "types.StopTool", "types.BookActivityTool", "types.SuggestActivityTool"]:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            # Use streaming internally when on_tick is provided
+            stream = self.stream.PrelimAgent(messages=messages,activities=activities,
+                baml_options=baml_options)
+            return await stream.get_final_response()
+        else:
+            # Original non-streaming code
+            result = await self.__options.merge_options(baml_options).call_function_async(function_name="PrelimAgent", args={
+                "messages": messages,"activities": activities,
+            })
+            return typing.cast(typing.Union["types.ReplyTool", "types.StopTool", "types.BookActivityTool", "types.SuggestActivityTool"], result.cast_to(types, types, stream_types, False, __runtime__))
+    async def RespondAgent(self, messages: typing.List["types.Message"],
         baml_options: BamlCallOptions = {},
     ) -> typing.Union["types.ReplyTool", "types.StopTool"]:
         # Check if on_tick is provided
         if 'on_tick' in baml_options:
             # Use streaming internally when on_tick is provided
-            stream = self.stream.MinimalChatAgent(messages=messages,
+            stream = self.stream.RespondAgent(messages=messages,
                 baml_options=baml_options)
             return await stream.get_final_response()
         else:
             # Original non-streaming code
-            result = await self.__options.merge_options(baml_options).call_function_async(function_name="MinimalChatAgent", args={
+            result = await self.__options.merge_options(baml_options).call_function_async(function_name="RespondAgent", args={
                 "messages": messages,
             })
             return typing.cast(typing.Union["types.ReplyTool", "types.StopTool"], result.cast_to(types, types, stream_types, False, __runtime__))
-    async def ToolSelect(self, transcription: str,
+    async def ToolSelectAgent(self, messages: typing.List["types.Message"],
         baml_options: BamlCallOptions = {},
-    ) -> bool:
+    ) -> typing.Union["types.GetEventsTool", "types.CheckPlantDataTool", "types.RecallTool", typing_extensions.Literal[False]]:
         # Check if on_tick is provided
         if 'on_tick' in baml_options:
             # Use streaming internally when on_tick is provided
-            stream = self.stream.ToolSelect(transcription=transcription,
+            stream = self.stream.ToolSelectAgent(messages=messages,
                 baml_options=baml_options)
             return await stream.get_final_response()
         else:
             # Original non-streaming code
-            result = await self.__options.merge_options(baml_options).call_function_async(function_name="ToolSelect", args={
-                "transcription": transcription,
+            result = await self.__options.merge_options(baml_options).call_function_async(function_name="ToolSelectAgent", args={
+                "messages": messages,
             })
-            return typing.cast(bool, result.cast_to(types, types, stream_types, False, __runtime__))
+            return typing.cast(typing.Union["types.GetEventsTool", "types.CheckPlantDataTool", "types.RecallTool", typing_extensions.Literal[False]], result.cast_to(types, types, stream_types, False, __runtime__))
     
 
 
@@ -142,10 +157,22 @@ class BamlStreamClient:
           lambda x: typing.cast(bool, x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
-    def MinimalChatAgent(self, messages: typing.List["types.Message"],
+    def PrelimAgent(self, messages: typing.List["types.Message"],activities: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[typing.Union["stream_types.ReplyTool", "stream_types.StopTool", "stream_types.BookActivityTool", "stream_types.SuggestActivityTool"], typing.Union["types.ReplyTool", "types.StopTool", "types.BookActivityTool", "types.SuggestActivityTool"]]:
+        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="PrelimAgent", args={
+            "messages": messages,"activities": activities,
+        })
+        return baml_py.BamlStream[typing.Union["stream_types.ReplyTool", "stream_types.StopTool", "stream_types.BookActivityTool", "stream_types.SuggestActivityTool"], typing.Union["types.ReplyTool", "types.StopTool", "types.BookActivityTool", "types.SuggestActivityTool"]](
+          result,
+          lambda x: typing.cast(typing.Union["stream_types.ReplyTool", "stream_types.StopTool", "stream_types.BookActivityTool", "stream_types.SuggestActivityTool"], x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(typing.Union["types.ReplyTool", "types.StopTool", "types.BookActivityTool", "types.SuggestActivityTool"], x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
+    def RespondAgent(self, messages: typing.List["types.Message"],
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlStream[typing.Union["stream_types.ReplyTool", "stream_types.StopTool"], typing.Union["types.ReplyTool", "types.StopTool"]]:
-        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="MinimalChatAgent", args={
+        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="RespondAgent", args={
             "messages": messages,
         })
         return baml_py.BamlStream[typing.Union["stream_types.ReplyTool", "stream_types.StopTool"], typing.Union["types.ReplyTool", "types.StopTool"]](
@@ -154,16 +181,16 @@ class BamlStreamClient:
           lambda x: typing.cast(typing.Union["types.ReplyTool", "types.StopTool"], x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
-    def ToolSelect(self, transcription: str,
+    def ToolSelectAgent(self, messages: typing.List["types.Message"],
         baml_options: BamlCallOptions = {},
-    ) -> baml_py.BamlStream[bool, bool]:
-        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="ToolSelect", args={
-            "transcription": transcription,
+    ) -> baml_py.BamlStream[typing.Union["stream_types.GetEventsTool", "stream_types.CheckPlantDataTool", "stream_types.RecallTool", bool], typing.Union["types.GetEventsTool", "types.CheckPlantDataTool", "types.RecallTool", typing_extensions.Literal[False]]]:
+        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="ToolSelectAgent", args={
+            "messages": messages,
         })
-        return baml_py.BamlStream[bool, bool](
+        return baml_py.BamlStream[typing.Union["stream_types.GetEventsTool", "stream_types.CheckPlantDataTool", "stream_types.RecallTool", bool], typing.Union["types.GetEventsTool", "types.CheckPlantDataTool", "types.RecallTool", typing_extensions.Literal[False]]](
           result,
-          lambda x: typing.cast(bool, x.cast_to(types, types, stream_types, True, __runtime__)),
-          lambda x: typing.cast(bool, x.cast_to(types, types, stream_types, False, __runtime__)),
+          lambda x: typing.cast(typing.Union["stream_types.GetEventsTool", "stream_types.CheckPlantDataTool", "stream_types.RecallTool", bool], x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(typing.Union["types.GetEventsTool", "types.CheckPlantDataTool", "types.RecallTool", typing_extensions.Literal[False]], x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
     
@@ -181,18 +208,25 @@ class BamlHttpRequestClient:
             "transcription": transcription,
         }, mode="request")
         return result
-    async def MinimalChatAgent(self, messages: typing.List["types.Message"],
+    async def PrelimAgent(self, messages: typing.List["types.Message"],activities: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
-        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="MinimalChatAgent", args={
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="PrelimAgent", args={
+            "messages": messages,"activities": activities,
+        }, mode="request")
+        return result
+    async def RespondAgent(self, messages: typing.List["types.Message"],
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="RespondAgent", args={
             "messages": messages,
         }, mode="request")
         return result
-    async def ToolSelect(self, transcription: str,
+    async def ToolSelectAgent(self, messages: typing.List["types.Message"],
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
-        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ToolSelect", args={
-            "transcription": transcription,
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ToolSelectAgent", args={
+            "messages": messages,
         }, mode="request")
         return result
     
@@ -210,18 +244,25 @@ class BamlHttpStreamRequestClient:
             "transcription": transcription,
         }, mode="stream")
         return result
-    async def MinimalChatAgent(self, messages: typing.List["types.Message"],
+    async def PrelimAgent(self, messages: typing.List["types.Message"],activities: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
-        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="MinimalChatAgent", args={
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="PrelimAgent", args={
+            "messages": messages,"activities": activities,
+        }, mode="stream")
+        return result
+    async def RespondAgent(self, messages: typing.List["types.Message"],
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="RespondAgent", args={
             "messages": messages,
         }, mode="stream")
         return result
-    async def ToolSelect(self, transcription: str,
+    async def ToolSelectAgent(self, messages: typing.List["types.Message"],
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
-        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ToolSelect", args={
-            "transcription": transcription,
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ToolSelectAgent", args={
+            "messages": messages,
         }, mode="stream")
         return result
     

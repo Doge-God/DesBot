@@ -17,11 +17,23 @@ client<llm> CustomGPT4oMini {
   }
 }
 
+client<llm> GPT41NanoFast {
+  provider openai
+  retry_policy Exponential
+  options {
+    model "gpt-4.1-nano"
+    api_key env.OPENAI_API_KEY
+    service_tier "priority"
+  }
+}
+
 client<llm> MistralInstruct {
   provider "openai-generic"
   options {
-    base_url "http://192.168.137.249:11434/v1"
-    model "MistralInstructShort:latest"
+    base_url "http://192.168.137.24:11434/v1"
+    model "MistralInstruct16K"
+    default_role "system"
+    allowed_roles ["user", "assistant", "tool", "system"]
   }
 }
 

@@ -23,18 +23,26 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
     value: StreamStateValueT
     state: typing_extensions.Literal["Pending", "Incomplete", "Complete"]
 # #########################################################################
-# Generated classes (5)
+# Generated classes (8)
 # #########################################################################
 
-class Action(BaseModel):pass
+class BookActivityTool(BaseModel):
+    action_name: typing.Optional[str] = None
+    activity: typing.Optional[str] = None
+
+class CheckPlantDataTool(BaseModel):
+    action_name: typing.Optional[str] = None
+
+class GetEventsTool(BaseModel):
+    action_name: typing.Optional[str] = None
 
 class Message(BaseModel):
-    role: typing.Optional[typing.Union[str, str]] = None
+    role: typing.Optional[typing.Union[str, str, str]] = None
     content: typing.Optional[str] = None
 
-class QueryPastConversationTool(BaseModel):
+class RecallTool(BaseModel):
     action_name: typing.Optional[str] = None
-    search_phrases: typing.List[str]
+    search_phrase: typing.Optional[str] = None
 
 class ReplyTool(BaseModel):
     action_name: typing.Optional[str] = None
@@ -43,6 +51,10 @@ class ReplyTool(BaseModel):
 class StopTool(BaseModel):
     action_name: typing.Optional[str] = None
     response: typing.Optional[str] = None
+
+class SuggestActivityTool(BaseModel):
+    action_name: typing.Optional[str] = None
+    description: typing.Optional[str] = None
 
 # #########################################################################
 # Generated type aliases (0)

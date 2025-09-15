@@ -1,2 +1,2 @@
 ---
-string chat_history
+bool is_successful

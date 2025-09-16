@@ -65,13 +65,14 @@ class RecallTool(BaseModel):
 class ReplyTool(BaseModel):
     action_name: typing_extensions.Literal['reply']
     response: str
+    mood: typing.Union[typing_extensions.Literal['happy'], typing_extensions.Literal['neutral'], typing_extensions.Literal['sad']]
 
 class StopTool(BaseModel):
     action_name: typing_extensions.Literal['stop']
     response: str
 
 class SuggestActivityTool(BaseModel):
-    action_name: typing_extensions.Literal['suggest_activity']
+    action_name: typing_extensions.Literal['submit_activity_suggestion']
     description: str
 
 # #########################################################################

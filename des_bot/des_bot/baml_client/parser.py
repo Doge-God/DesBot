@@ -28,6 +28,12 @@ class LlmResponseParser:
         result = self.__options.merge_options(baml_options).parse_response(function_name="DetectTranscriptionEnd", llm_response=llm_response, mode="request")
         return typing.cast(bool, result)
 
+    def FarewellAgent(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> str:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="FarewellAgent", llm_response=llm_response, mode="request")
+        return typing.cast(str, result)
+
     def PrelimAgent(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> typing.Union["types.ReplyTool", "types.StopTool", "types.BookActivityTool", "types.SuggestActivityTool"]:
@@ -59,6 +65,12 @@ class LlmStreamParser:
     ) -> bool:
         result = self.__options.merge_options(baml_options).parse_response(function_name="DetectTranscriptionEnd", llm_response=llm_response, mode="stream")
         return typing.cast(bool, result)
+
+    def FarewellAgent(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> str:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="FarewellAgent", llm_response=llm_response, mode="stream")
+        return typing.cast(str, result)
 
     def PrelimAgent(
         self, llm_response: str, baml_options: BamlCallOptions = {},

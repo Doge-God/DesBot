@@ -7,6 +7,11 @@ class ReplyTool {
     action_name "reply" @stream.done  @description(#"
         to reply to the user with a message."#)
     response string 
+    mood "happy" | "neutral" | "sad" @description(#"
+        the mood of the reply, which can be happy, neutral or sad. 
+        Use happy when the user is happy or making a positive statement.
+        Use sad when the user is sad or making a negative statement.
+        Use neutral otherwise."#)
 }
 
 class BookActivityTool {
@@ -28,23 +33,31 @@ class StopTool {
 }
 
 class SuggestActivityTool {
-    action_name "suggest_activity" @stream.done @description(#"
+    action_name "submit_activity_suggestion" @stream.done @description(#"
         submit an activity suggestion to Oceania. Ensure the user agrees to sharing the suggestion before using this action
     "#)
     description string 
 }
 
+// //  Messages:
+// //         {% for message in messages %}
+// //            {{_.role(message.role)}}
+// //            {{message.content}}
+// //         {% endfor %}
+
 function PrelimAgent(messages: Message[], activities: string) -> (ReplyTool | StopTool | BookActivityTool | SuggestActivityTool) {
     client MistralInstruct //GPT41NanoFast //MistralInstruct //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI_API_KEY to use this client.
+    
     prompt #"
-        You are a helpful assistant for elders in a retirement village. 
+        You are a helpful assistant for elders in a retirement village. Do not make up information about real people.
 
-        Only reply with given JSON format and never raw strings. 
+        Select from given actions specified with JSON to respond to the user.
+    
         "reply" is the default action to respond to user.
         Further information can be fetched with given actions.
         Some actions interact with wider system at Oceania to provide further assistant, but ensure you have all relevant information before using them. If not, use "reply" to ask the user for required information.
 
-        Today's activities are:
+        Today's activities are:  
         {{activities}}
 
         {{ ctx.output_format }}
@@ -54,20 +67,42 @@ function PrelimAgent(messages: Message[], activities: string) -> (ReplyTool | St
     "#
 }
 
-function RespondAgent(messages: Message[]) -> (ReplyTool | StopTool) {
+function RespondAgent(messages: Message[], activities: string) -> (ReplyTool | StopTool) {
     client MistralInstruct //GPT41NanoFast //MistralInstruct //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI
     prompt #"
-        You are a helpful assistant for elders in a retirement village. 
+        You are a helpful assistant for elders in a retirement village. Do not make up information about real people.
 
-        Only reply with given JSON format and never raw strings. 
+        Only reply with given JSON format regarless of previous response formats
         "reply" is the default action to respond to user.
 
-        Messages:
-        {{messages}}
+        Today's activities are:  
+        {{activities}}
 
         {{ ctx.output_format }}
+
+        Messages:
+            {% for message in messages %}
+            {{_.role(message.role)}}
+            {{message.content}}
+            {% endfor %}
     "#
 }
+
+function FarewellAgent(messages: Message[]) -> (string) {
+    client MistralInstruct //GPT41NanoFast //MistralInstruct //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI
+    prompt #"
+        You are a helpful assistant for elders in a retirement village. Do not make up information about real people.
+
+        Write a short and polite farewell message to the user given the message history, indicating that you are ending the conversation.
+
+        Messages:
+            {% for message in messages %}
+            {{_.role(message.role)}}
+            {{message.content}}
+            {% endfor %}
+    "#
+}
+    
 
 test ToolInteractionCheck {
     functions [PrelimAgent]
@@ -86,8 +121,8 @@ test ToolInteractionCheck {
                 content "What is the weather like today?"
             },
             { 
-                role "tool"
-                content "Sunny. 32 Celsius."
+                role "user"
+                content "Tool calling result: Sunny. 32 Celsius."
             }
         ]
         activities "Bowling, 10am. Yoga, 2pm. Movie, 6pm."

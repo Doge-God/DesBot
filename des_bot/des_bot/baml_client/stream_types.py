@@ -47,6 +47,7 @@ class RecallTool(BaseModel):
 class ReplyTool(BaseModel):
     action_name: typing.Optional[str] = None
     response: typing.Optional[str] = None
+    mood: typing.Optional[typing.Union[str, str, str]] = None
 
 class StopTool(BaseModel):
     action_name: typing.Optional[str] = None

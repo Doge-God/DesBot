@@ -102,6 +102,20 @@ class BamlSyncClient:
                 "transcription": transcription,
             })
             return typing.cast(bool, result.cast_to(types, types, stream_types, False, __runtime__))
+    def FarewellAgent(self, messages: typing.List["types.Message"],
+        baml_options: BamlCallOptions = {},
+    ) -> str:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            stream = self.stream.FarewellAgent(messages=messages,
+                baml_options=baml_options)
+            return stream.get_final_response()
+        else:
+            # Original non-streaming code
+            result = self.__options.merge_options(baml_options).call_function_sync(function_name="FarewellAgent", args={
+                "messages": messages,
+            })
+            return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
     def PrelimAgent(self, messages: typing.List["types.Message"],activities: str,
         baml_options: BamlCallOptions = {},
     ) -> typing.Union["types.ReplyTool", "types.StopTool", "types.BookActivityTool", "types.SuggestActivityTool"]:
@@ -116,18 +130,18 @@ class BamlSyncClient:
                 "messages": messages,"activities": activities,
             })
             return typing.cast(typing.Union["types.ReplyTool", "types.StopTool", "types.BookActivityTool", "types.SuggestActivityTool"], result.cast_to(types, types, stream_types, False, __runtime__))
-    def RespondAgent(self, messages: typing.List["types.Message"],
+    def RespondAgent(self, messages: typing.List["types.Message"],activities: str,
         baml_options: BamlCallOptions = {},
     ) -> typing.Union["types.ReplyTool", "types.StopTool"]:
         # Check if on_tick is provided
         if 'on_tick' in baml_options:
-            stream = self.stream.RespondAgent(messages=messages,
+            stream = self.stream.RespondAgent(messages=messages,activities=activities,
                 baml_options=baml_options)
             return stream.get_final_response()
         else:
             # Original non-streaming code
             result = self.__options.merge_options(baml_options).call_function_sync(function_name="RespondAgent", args={
-                "messages": messages,
+                "messages": messages,"activities": activities,
             })
             return typing.cast(typing.Union["types.ReplyTool", "types.StopTool"], result.cast_to(types, types, stream_types, False, __runtime__))
     def ToolSelectAgent(self, messages: typing.List["types.Message"],
@@ -165,6 +179,18 @@ class BamlStreamClient:
           lambda x: typing.cast(bool, x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
+    def FarewellAgent(self, messages: typing.List["types.Message"],
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlSyncStream[str, str]:
+        ctx, result = self.__options.merge_options(baml_options).create_sync_stream(function_name="FarewellAgent", args={
+            "messages": messages,
+        })
+        return baml_py.BamlSyncStream[str, str](
+          result,
+          lambda x: typing.cast(str, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(str, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
     def PrelimAgent(self, messages: typing.List["types.Message"],activities: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlSyncStream[typing.Union["stream_types.ReplyTool", "stream_types.StopTool", "stream_types.BookActivityTool", "stream_types.SuggestActivityTool"], typing.Union["types.ReplyTool", "types.StopTool", "types.BookActivityTool", "types.SuggestActivityTool"]]:
@@ -177,11 +203,11 @@ class BamlStreamClient:
           lambda x: typing.cast(typing.Union["types.ReplyTool", "types.StopTool", "types.BookActivityTool", "types.SuggestActivityTool"], x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
-    def RespondAgent(self, messages: typing.List["types.Message"],
+    def RespondAgent(self, messages: typing.List["types.Message"],activities: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlSyncStream[typing.Union["stream_types.ReplyTool", "stream_types.StopTool"], typing.Union["types.ReplyTool", "types.StopTool"]]:
         ctx, result = self.__options.merge_options(baml_options).create_sync_stream(function_name="RespondAgent", args={
-            "messages": messages,
+            "messages": messages,"activities": activities,
         })
         return baml_py.BamlSyncStream[typing.Union["stream_types.ReplyTool", "stream_types.StopTool"], typing.Union["types.ReplyTool", "types.StopTool"]](
           result,
@@ -216,6 +242,13 @@ class BamlHttpRequestClient:
             "transcription": transcription,
         }, mode="request")
         return result
+    def FarewellAgent(self, messages: typing.List["types.Message"],
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="FarewellAgent", args={
+            "messages": messages,
+        }, mode="request")
+        return result
     def PrelimAgent(self, messages: typing.List["types.Message"],activities: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -223,11 +256,11 @@ class BamlHttpRequestClient:
             "messages": messages,"activities": activities,
         }, mode="request")
         return result
-    def RespondAgent(self, messages: typing.List["types.Message"],
+    def RespondAgent(self, messages: typing.List["types.Message"],activities: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="RespondAgent", args={
-            "messages": messages,
+            "messages": messages,"activities": activities,
         }, mode="request")
         return result
     def ToolSelectAgent(self, messages: typing.List["types.Message"],
@@ -252,6 +285,13 @@ class BamlHttpStreamRequestClient:
             "transcription": transcription,
         }, mode="stream")
         return result
+    def FarewellAgent(self, messages: typing.List["types.Message"],
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="FarewellAgent", args={
+            "messages": messages,
+        }, mode="stream")
+        return result
     def PrelimAgent(self, messages: typing.List["types.Message"],activities: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -259,11 +299,11 @@ class BamlHttpStreamRequestClient:
             "messages": messages,"activities": activities,
         }, mode="stream")
         return result
-    def RespondAgent(self, messages: typing.List["types.Message"],
+    def RespondAgent(self, messages: typing.List["types.Message"],activities: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="RespondAgent", args={
-            "messages": messages,
+            "messages": messages,"activities": activities,
         }, mode="stream")
         return result
     def ToolSelectAgent(self, messages: typing.List["types.Message"],

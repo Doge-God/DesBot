@@ -288,7 +288,7 @@ class ReplyToolAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("ReplyTool")
-        self._properties: typing.Set[str] = set([  "action_name",  "response",  ])
+        self._properties: typing.Set[str] = set([  "action_name",  "response",  "mood",  ])
         self._props = ReplyToolProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -323,6 +323,10 @@ class ReplyToolProperties:
     @property
     def response(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("response"))
+    
+    @property
+    def mood(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("mood"))
     
     
 

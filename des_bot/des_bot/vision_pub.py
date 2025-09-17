@@ -70,7 +70,7 @@ class VisionResultPublisher(Node):
 
                     self.publisher_.publish(msg)
                     self.last_publish_time = now
-                    self.get_logger().info(f"Published {len(msg.points)} points")
+                    # self.get_logger().info(f"Published {len(msg.points)} points")
 
             except Exception as e:
                 self.get_logger().error(f"Serial read error: {e}")

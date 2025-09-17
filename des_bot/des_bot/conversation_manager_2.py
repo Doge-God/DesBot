@@ -23,30 +23,11 @@ from .baml_client.types import Message, ReplyTool, StopTool, BookActivityTool, S
 from .baml_client import stream_types
 
 from .services.sentence_piece_tts import SentencePieceTts, SentencePiecePoisonPill
+from .utils.conversation_state_types import ConversationState
 
-from des_bot_interfaces.srv import RunConversation
+from des_bot_interfaces.srv import StartConversation, EndConversation
 
 load_dotenv()
-
-class ConversationState(Flag):
-    IDLE = auto()
-
-    USER_TURN = auto()
-    
-    ROBOT_PRE = auto()
-    '''Processing conversation: can choose tool OR respond/farewell without tool'''
-    ROBOT_TOOL_CALLING = auto()
-    '''Calling tool'''
-    ROBOT_AFT = auto()
-    '''Can only generate response/farewell given tool result. (prevent tool loops)'''
-
-    ROBOT_COUNTDOWN = auto()
-
-    CONVERSATION_SHUTDOWN = auto()
-
-    #-----------------------------------------------
-    ROBOT_TURN = ROBOT_PRE | ROBOT_TOOL_CALLING | ROBOT_AFT | ROBOT_COUNTDOWN
-  
 
 class ConversationManager():
     def __init__(self, node:Node):
@@ -96,9 +77,15 @@ class ConversationManager():
         '''Last time either user word heard / robot spoke something. Used for auto sleep.'''
 
         self.srv = self.node.create_service(
-            RunConversation,
-            'run_conversation',
+            StartConversation,
+            'start_conversation',
             self.run_conversation_callback
+        )
+
+        self.srv = self.node.create_service(
+            EndConversation,
+            "end_conversation",
+            self.end_conversation_callback
         )
 
     ################################################################################################
@@ -112,6 +99,17 @@ class ConversationManager():
         response.is_successful = True
         self.node.get_logger().info("## STARTING NEW CONVERSATION ##")
         asyncio.gather(self.handle_USER_START_CONVERSATION())
+        return response
+    
+    def end_conversation_callback(self, _ , response):
+        if self.state == ConversationState.IDLE:
+            self.node.get_logger().warn("Idle, rejecting end conversation request.")
+            response.is_successful = False
+            return response
+        
+        self.node.get_logger().info("## USER END CONVERSATION ##")
+        self.handle_USER_END_CONVERSATION()
+        response.is_successful = True
         return response
     
     async def tick_stt_events(self):
@@ -244,7 +242,12 @@ class ConversationManager():
         self.state_publisher.publish(self.create_std_str_msg(ConversationState.CONVERSATION_SHUTDOWN.name))
         self.state = ConversationState.CONVERSATION_SHUTDOWN
         asyncio.create_task(self.run_conversation_shutdown())
-        
+    
+    def handle_USER_END_CONVERSATION(self):
+        self.node.get_logger().info("## HANDLE ROBOT END CONVERSATION")
+        self.state_publisher.publish(self.create_std_str_msg(ConversationState.CONVERSATION_SHUTDOWN.name))
+        self.state = ConversationState.CONVERSATION_SHUTDOWN
+        asyncio.create_task(self.run_conversation_shutdown())
 
     def handle_RESET_TO_IDLE(self):
         self.node.get_logger().info("## HANDLE RESET TO IDLE")
@@ -610,7 +613,6 @@ class ConversationManager():
                 self.stt_session.pause_predictor.value = 0
 
             self.stt_word_buffer.append(message.text)
-            self.node.get_logger().info(message.text)
 
         self.node.get_logger().info("STT task finished.")
 

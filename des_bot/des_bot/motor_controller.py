@@ -1,9 +1,12 @@
 import rclpy
 from rclpy.node import Node
-from des_bot_interfaces.msg import RecFrameResult2
+from std_msgs.msg import String
 import serial
 
-class NaiveTrackingController(Node):
+from des_bot_interfaces.msg import RecFrameResult2
+from .utils.conversation_state_types import ConversationState
+
+class MotorController(Node):
 
     def __init__(self):
         super().__init__('motor_controller_node')
@@ -38,15 +41,28 @@ class NaiveTrackingController(Node):
             self.get_logger().error(f'Serial connection failed: {e}')
             self.serial_port = None
 
+
+        # keep track of previous conv state for rec frame listener activation
+        self.last_state = ConversationState.IDLE
+        
+        # reset to neutral location
+        self.send_motor_command('A', self.motor_x)
+        self.send_motor_command('B', self.motor_y)
+
         # Subscription to recognition frame result
-        self.subscription = self.create_subscription(
-            RecFrameResult2,
-            'rec_frame_result',
-            self.rec_frame_callback,
+        self.rec_sub = None
+
+        self.conversation_state_sub = self.create_subscription(
+            String,
+            'conversation_state',
+            self.state_callback,
             10
         )
 
+    ################################################################################################
+    ############## TOPIC LISTENER CALLBACKS ############################################
     def rec_frame_callback(self, msg):
+        # self.get_logger().warn('motor_x clipped to max_x')
         if not msg.points:
             return
 
@@ -65,46 +81,84 @@ class NaiveTrackingController(Node):
             self.motor_y -= self.step_size
 
         # Clip and warn
-        clipped = False
         if self.motor_x > self.max_x:
             self.motor_x = self.max_x
-            self.get_logger().warn('motor_x clipped to max_x')
-            clipped = True
+            # self.get_logger().warn('motor_x clipped to max_x')
         elif self.motor_x < self.min_x:
             self.motor_x = self.min_x
-            self.get_logger().warn('motor_x clipped to min_x')
-            clipped = True
+            # self.get_logger().warn('motor_x clipped to min_x')
 
         if self.motor_y > self.max_y:
             self.motor_y = self.max_y
-            self.get_logger().warn('motor_y clipped to max_y')
-            clipped = True
+            # self.get_logger().warn('motor_y clipped to max_y')
         elif self.motor_y < self.min_y:
             self.motor_y = self.min_y
-            self.get_logger().warn('motor_y clipped to min_y')
-            clipped = True
+            # self.get_logger().warn('motor_y clipped to min_y')
 
         # Send motor commands
         self.send_motor_command('A', self.motor_x)
         self.send_motor_command('B', self.motor_y)
 
+    def state_callback(self, msg):
+        # Convert string back to ConversationState flag
+        try:
+            state_flag = ConversationState[msg.data]
+            self.current_state = state_flag
+            self.react_to_state_change(state_flag)
+            self.last_state = state_flag
+        except KeyError:
+            self.get_logger().warn(f"Unknown state received: {msg.data}")
+
+    ################################################################################################
+    ############## CHANGE BEHAVIOUR BASED ON STATE ############################################
+    def react_to_state_change(self, state_flag):
+        # enter idle: keep still
+        if state_flag == ConversationState.IDLE:
+            self.destroy_subscription(self.rec_sub)
+            self.send_motor_command('A', 0.0)
+            self.send_motor_command('B', 0.0)
+
+        # enter conversation: track
+        elif state_flag in ConversationState.IN_CONVERSATION and self.last_state == ConversationState.IDLE:
+            self.send_motor_command('A', 0.0)
+            self.send_motor_command('B', -0.3)
+            self.rec_sub = self.create_subscription(
+                RecFrameResult2,
+                'rec_frame_result',
+                self.rec_frame_callback,
+                1
+            )
+
+        
+
+    ################################################################################################
+    ############## UTILS ############################################
     def send_motor_command(self, motor_id, angle):
         if self.serial_port is not None:
             command = f"{motor_id}{angle:.3f}\n"
             try:
                 self.serial_port.write(command.encode())
-                self.get_logger().info(f'Sent command: {command.strip()}')
+                # self.get_logger().info(f'Sent command: {command.strip()}')
             except serial.SerialException as e:
                 self.get_logger().error(f'Failed to send command: {e}')
         else:
             self.get_logger().warn(f'Skipped command {motor_id}{angle:.3f} - No serial connection.')
 
+    def clean_up(self):
+        self.send_motor_command('A', 0.0)
+        self.send_motor_command('B', 0.0)
+        self.serial_port.close()
+
 def main(args=None):
     rclpy.init(args=args)
-    node = NaiveTrackingController()
+    node = MotorController()
+    
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
-    node.destroy_node()
-    rclpy.shutdown()
+    finally:
+        node.clean_up()
+        node.destroy_node()
+        rclpy.shutdown()
+  

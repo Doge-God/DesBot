@@ -29,7 +29,7 @@ from des_bot_interfaces.srv import StartConversation, EndConversation
 
 load_dotenv()
 
-class ConversationManager():
+class ConversationManagerDG():
     def __init__(self, node:Node):
     
         self.node = node

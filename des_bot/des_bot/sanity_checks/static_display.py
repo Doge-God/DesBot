@@ -18,14 +18,26 @@ cnt2 = 1
 
 def on_main_button_pressed():
     global cnt
+    global is_main_on
     print(f"Main button pressed: {cnt}") 
-    main_button_led.pulse(fade_in_time=0.3, fade_out_time=0.5)       
+    if not is_main_on:
+        main_button_led.pulse(fade_in_time=0.3, fade_out_time=0.5)     
+        is_main_on = True
+    else:
+        main_button_led.off()
+        is_main_on = False
     cnt += 1
 
 def on_stop_button_pressed():
     global cnt2
+    global is_ant_on
     print(f"Stop button pressed: {cnt2}" )
-    antenna_led.pulse(fade_in_time=0.1, fade_out_time=0.3)  
+    if not is_ant_on:
+        antenna_led.pulse(fade_in_time=0.1, fade_out_time=0.3)  
+        is_ant_on = True
+    else:
+        antenna_led.off()
+        is_ant_on = False
     cnt2 += 1
 
 main_button.when_pressed = on_main_button_pressed
@@ -60,13 +72,36 @@ def draw_centered_ellipse_top_half(draw: ImageDraw, x, y, w, h, fill, shown_rati
     # Draw black rectangle over the bottom part
     draw.rectangle([(x - w/2, block_start_y), (x + w/2, y + h/2)], fill="black")
 
+def draw_centered_rectangle(draw: ImageDraw, x, y, w, h, fill, radius=None):
+    """
+    Draws a centered rounded rectangle. If Pillow supports rounded_rectangle it will be used,
+    otherwise a manual pieslice/rectangle approach is used as a fallback.
+    """
+    left = x - w / 2
+    top = y - h / 2
+    right = x + w / 2
+    bottom = y + h / 2
+
+    # determine corner radius
+    if radius is None:
+        r = int(min(w, h) * 0.2)
+    else:
+        r = int(radius)
+    # clamp radius
+    r = max(0, min(r, int(min(w, h) / 2)))
+
+    draw.rounded_rectangle([(left, top), (right, bottom)], radius=r, fill=fill)
+
+
+# draw_centered_ellipse_top_half(draw, 64, 80, 70, 70, '#ffc300', 0.75)
+# draw_centered_rectangle(draw, 64, 80, 70, 40, '#ffc300', 10)
 
 
 while True:
     with canvas(device_0) as draw:
         device_0.backlight(False)
-        draw_centered_ellipse_top_half(draw, 64, 80, 70, 70, '#ffc300', 0.75)
+        draw_centered_ellipse_top_half(draw, 64, 80, 70, 70, '#ffc300', 1)
 
     with canvas(device_1) as draw:
         device_1.backlight(False)
-        draw_centered_ellipse_top_half(draw, 64, 80, 70, 70, '#ffc300', 0.75)
+        draw_centered_rectangle(draw, 64, 80, 70, 30, '#ffc300', 15)

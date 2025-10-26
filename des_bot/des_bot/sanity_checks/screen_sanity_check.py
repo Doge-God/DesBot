@@ -18,13 +18,13 @@ def draw_centered_ellipse(draw:ImageDraw,x,y,w,h,fill):
 while True:
     with canvas(device_0) as draw:
         device_0.backlight(False)
-        draw_centered_ellipse(draw, 64, 80, 40, 70, 'cyan')
+        draw_centered_ellipse(draw, 64, 80, 70, 70, '#ffc300')
 
 
 
     
     with canvas(device_1) as draw:
         device_1.backlight(False)
-        draw_centered_ellipse(draw, 64, 80, 40, 70, 'cyan')
+        draw_centered_ellipse(draw, 64, 80, 70, 70, '#ffc300')
 
         

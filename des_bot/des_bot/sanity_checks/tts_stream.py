@@ -411,7 +411,6 @@ class Mock():
             channels=1,
             dtype="int16",
             callback=audio_callback,
-            device=0
         )
         if start_now:
             self.speaker_output_stream.start()

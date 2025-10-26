@@ -30,7 +30,7 @@ client<llm> GPT41NanoFast {
 client<llm> MistralInstruct {
   provider "openai-generic"
   options {
-    base_url "http://192.168.137.53:11434/v1"
+    base_url "http://192.168.137.195:11434/v1"
     model "MistralInstruct16K"
     default_role "system"
     allowed_roles ["user", "assistant", "tool", "system"]

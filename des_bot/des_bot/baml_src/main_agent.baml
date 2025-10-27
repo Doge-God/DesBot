@@ -46,7 +46,7 @@ class SuggestActivityTool {
 // //         {% endfor %}
 
 function PrelimAgent(messages: Message[], activities: string) -> (ReplyTool | StopTool | BookActivityTool | SuggestActivityTool) {
-    client MistralInstruct //GPT41NanoFast //MistralInstruct //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI_API_KEY to use this client.
+    client GPT41NanoFast //GPT41NanoFast //MistralInstruct //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI_API_KEY to use this client.
     
     prompt #"
         You are a helpful assistant for elders in a retirement village. Do not make up information about real people.
@@ -68,7 +68,7 @@ function PrelimAgent(messages: Message[], activities: string) -> (ReplyTool | St
 }
 
 function RespondAgent(messages: Message[], activities: string) -> (ReplyTool | StopTool) {
-    client MistralInstruct //GPT41NanoFast //MistralInstruct //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI
+    client GPT41NanoFast //GPT41NanoFast //MistralInstruct //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI
     prompt #"
         You are a helpful assistant for elders in a retirement village. Do not make up information about real people.
 
@@ -89,7 +89,7 @@ function RespondAgent(messages: Message[], activities: string) -> (ReplyTool | S
 }
 
 function FarewellAgent(messages: Message[]) -> (string) {
-    client MistralInstruct //GPT41NanoFast //MistralInstruct //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI
+    client GPT41NanoFast //GPT41NanoFast //MistralInstruct //CustomGPT4oMini //"openai/gpt-4o" // Set OPENAI
     prompt #"
         You are a helpful assistant for elders in a retirement village. Do not make up information about real people.
 

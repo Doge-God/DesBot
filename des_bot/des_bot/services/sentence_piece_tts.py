@@ -45,7 +45,7 @@ class SentencePieceTts:
                     self.audio_buffer += chunk
 
             # trim off 300ms of end silence.
-            self.audio_buffer = self.audio_buffer[:-4800] # 24000 frames/s * 0.1s * 2(byte per frame)
+            # self.audio_buffer = self.audio_buffer[:-4800] # 24000 frames/s * 0.1s * 2(byte per frame)
             self.is_complete_audio_fetched = True
             print(f"^ Done fetch: [{self.text[:20]}..]. Got [{len(self.audio_buffer)}] bytes")
         except asyncio.CancelledError:

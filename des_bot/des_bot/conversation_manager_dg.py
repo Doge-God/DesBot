@@ -1,5 +1,9 @@
 import asyncio
+import os
 import aiohttp
+from deepgram import AsyncDeepgramClient
+from deepgram.core.events import EventType
+from deepgram.extensions.types.sockets import ListenV2SocketClientResponse
 import librosa
 import rclpy
 from rclpy.node import Node
@@ -13,8 +17,6 @@ from typing import List, Optional, TYPE_CHECKING, get_type_hints
 import math
 import threading
 
-
-from .services.stt_session import SttSessionKyutai
 from .utils.llm_stream_parser import SemanticDeltaParser
 from .utils.audio_processor import OutputAudioProcessorInt16, bytes_needed_for_resample, resample_linear
 
@@ -37,6 +39,7 @@ class ConversationManagerDG():
         # self._loop = asyncio.new_event_loop()
         # self._loop_thread = threading.Thread(target=self._start_asyncio_loop, daemon=True)
         self.state_publisher = self.node.create_publisher(String, 'conversation_state', 10)
+        self.stt_pulse_publisher = self.node.create_publisher(String, 'stt_pulse', 10)
         # self._loop_thread.start()
 
         # param TODO might be good to use ros param --------------------------------------------------
@@ -57,8 +60,7 @@ class ConversationManagerDG():
         self.user_idle_timer_task = None
         '''Timer task to detect user silence, to end conversation'''
 
-        # queues & stream/connection management structures--------------------------------------------
-        self.stt_session:Optional[SttSessionKyutai] = None # this one has its own shutdown 
+        # queues & stream/connection management structures-------------------------------------------- 
         '''Manager for websocket connection and parses input from server'''
         self.tts_session = None
         self.speaker_output_stream = None
@@ -71,9 +73,7 @@ class ConversationManagerDG():
         self.stt_word_buffer = []
         self.robot_spoken_buffer = []
         self.end_of_flush_time = None
-        '''Internal time for stt session: time for when text stream is guaranteed to be complete up to flush point.'''
-        self.next_allowed_tts_request_stamp = None
-        self.last_interaction_stamp = None
+        self.is_stt_ready = asyncio.Event()
         '''Last time either user word heard / robot spoke something. Used for auto sleep.'''
 
         self.srv = self.node.create_service(
@@ -112,55 +112,40 @@ class ConversationManagerDG():
         response.is_successful = True
         return response
     
-    async def tick_stt_events(self):
-        '''Check if state transition should happen based on stt status values. Polled every tick (~per 80ms; 1920/24k; 12.5Hz) of mic data sent.'''
-        # is not in the process of flushing audio
-        if self.end_of_flush_time is None:
-            if self.should_transition_user_to_robot():
-                self.node.get_logger().info("Detected user end speech: begin flushing.")
-                # flush stt process on server with blank audio to immediate get last bits of transcription back
-                num_frames = int(math.ceil(0.5 / (0.08))) + 1 # some extra for safety
-                blank_audio = np.zeros(1920, dtype=np.float32)
-                self.end_of_flush_time = self.stt_session.current_time_sec + self.stt_session.delay_sec
-                for _ in range (num_frames):
-                    await self.stt_session.send_audio(blank_audio)
+    # async def tick_stt_events(self):
+    #     '''Check if state transition should happen based on stt status values. Polled every tick (~per 80ms; 1920/24k; 12.5Hz) of mic data sent.'''
+    #     # is not in the process of flushing audio
+    #     if self.end_of_flush_time is None:
+    #         if self.should_transition_user_to_robot():
+    #             self.node.get_logger().info("Detected user end speech: begin flushing.")
+    #             # flush stt process on server with blank audio to immediate get last bits of transcription back
+    #             num_frames = int(math.ceil(0.5 / (0.08))) + 1 # some extra for safety
+    #             blank_audio = np.zeros(1920, dtype=np.float32)
+    #             self.end_of_flush_time = self.stt_session.current_time_sec + self.stt_session.delay_sec
+    #             for _ in range (num_frames):
+    #                 await self.stt_session.send_audio(blank_audio)
             
-            elif self.should_interrupt_robot():
-                self.handle_INTERRUPT_ROBOT()
+    #         elif self.should_interrupt_robot():
+    #             self.handle_INTERRUPT_ROBOT()
         
-        # audio flushing in process
-        else:
-            # we are sure transcription is complete, at time of silence detection
-            if self.stt_session.current_time_sec > self.end_of_flush_time:
-                self.handle_USER_DONE_SPEAKING()
-                
- 
-    # UTIL ---------------------------------------------------------------------------------------------------------
-    def should_transition_user_to_robot(self):
-        '''Is user turn, detected pause, and have some transcript'''
-        if not self.stt_session:
-            return False
-        if (self.state == ConversationState.USER_TURN 
-            and self.stt_session.pause_predictor.value > 0.6
-            and len(self.stt_word_buffer)>=1):
-            return True
-        else:
-            return False
-    
-    def should_interrupt_robot(self):
-        '''In robot turn BUT there are words in stt buffer'''
-        if (self.state in ConversationState.ROBOT_TURN and self.stt_word_buffer):
-            return True
-        else:
-            return False
+    #     # audio flushing in process
+    #     else:
+    #         # we are sure transcription is complete, at time of silence detection
+    #         if self.stt_session.current_time_sec > self.end_of_flush_time:
+    #             self.handle_USER_DONE_SPEAKING()
+            
 
     
     ################################################################################################
     ############## State transition handler ############################################
     async def handle_USER_START_CONVERSATION(self):
+
+        # start stt stream first:   need to recieve stream ready from server
+        self.stt_stream_task = asyncio.create_task(self.run_stt_stream())
+
         await self.prepare_conversation_startup()
 
-        self.stt_stream_task = asyncio.create_task(self.run_stt_stream())
+      
         self.mic_stream_task = asyncio.create_task(self.run_mic_stream())
 
         self.state = ConversationState.USER_TURN
@@ -263,16 +248,7 @@ class ConversationManagerDG():
 
         self.node.get_logger().info("Readying conversation prerequisites...")
         t0 = self.node.get_clock().now().nanoseconds
-        
-        # networking sessions ---------------------------------
-        self.stt_session =  SttSessionKyutai(
-            node_clock=self.node.get_clock(),
-            node_logger=self.node.get_logger(),
-        )
-        await self.stt_session.start_up(
-            url="ws://192.168.137.1:8080/api/asr-streaming",
-            api_key="public_token"
-        )
+
         self.tts_session = aiohttp.ClientSession()
         ## START TTS AUDIO STREAM ------------------------------------------------
         # Contiously try grabbing audio from current sentence piece tts.
@@ -294,14 +270,14 @@ class ConversationManagerDG():
             processed = (
                 OutputAudioProcessorInt16(buffered_data)
                 .downsample(num_frames=frames, target_rate=16000)
-                .ring_mod(freq=40)
+                # .ring_mod(freq=40)
                 .process()
             )
             outdata[:] = processed
 
         self.speaker_output_stream = sd.RawOutputStream(
-            samplerate=16000,  
             channels=1,
+            samplerate=16000,  
             dtype="int16",
             callback=speaker_output_stream_callback,
         )
@@ -321,6 +297,11 @@ class ConversationManagerDG():
         self.last_user_done_speaking_stamp = None
 
         t1 = self.node.get_clock().now().nanoseconds
+
+        self.node.get_logger().info("WAITING FOR STT READY...")
+        # wait for stt to be ready
+        await self.is_stt_ready.wait()
+
         self.node.get_logger().info(f"Conversation ready. Spend: {(t1-t0)/1e6:.2f} ms")
 
     ################################################################################################
@@ -483,7 +464,7 @@ class ConversationManagerDG():
         try:
             self.speaker_output_stream.abort()
             self.mic_stream_task.cancel()
-            await self.stt_session.shutdown()
+            self.stt_stream_task.cancel()
             await self.tts_session.close()
         except Exception as e:
             self.node.get_logger().warning("Caught error when shutting down: "+str(e))
@@ -569,53 +550,111 @@ class ConversationManagerDG():
                 data_copy = data[:,0].astype(np.float32).copy()
                 data_copy[np.abs(data_copy) < 0.01] = 0
                 this_loop.call_soon_threadsafe(
-                    self.mic_audio_queue.put_nowait, data_copy
+                    self.mic_audio_queue.put_nowait, data_copy.tobytes()
                 )
 
-            with sd.InputStream(
+            input_stream = sd.InputStream(
                     samplerate=16000, 
-                    channels=1, 
-                    blocksize=1920,
+                    # channels=1, 
+                    blocksize=1280, # 80ms per block at 16kHz
                     dtype='float32',
                     callback=audio_callback,
-                    device=0
-                ):
-
-                # 1920 samples at 16000 hz ~ 120ms
-                while True:
-                    audio_data = await self.mic_audio_queue.get()
-                    # Resample to 24kHz NOT with librosa thing takes 2s
-                    resampled = resample_linear(audio_data, orig_sr=16000, target_sr=24000)
-
-                    # dont send audio when flushing
-                    try:
-                        if not self.end_of_flush_time:
-                            await self.stt_session.send_audio(resampled)
-                    except Exception as e:
-                        self.node.get_logger().warning("Caught when sending audio: "+str(e))
-                    
-                    await self.tick_stt_events()
+                    device=1
+                )
+            input_stream.start()
 
         except asyncio.CancelledError:
+            input_stream.stop()
             self.node.get_logger().info("Mic stream closed cleanly.")
             raise
    
     async def run_stt_stream(self):
-        '''closes by calling shutdown on stt_session instance'''
-        self.node.get_logger().info("Begin stt stream, listing for transcribed words")
-        if not self.stt_session:
-            raise RuntimeError("Trying to listen to stt response without instantiating object first.")
+        '''connect to deepgram flux stt service, send mic audio from mic_audio_queue, handle returned messages/events'''
         
-        # breaks gracefully when shutdown func called on stt_session
-        async for message in self.stt_session:
+        # if not self.stt_session:
+        #     raise RuntimeError("Trying to listen to stt response without instantiating object first.")
+        
+        # # breaks gracefully when shutdown func called on stt_session
+        # async for message in self.stt_session:
             
-            # first utterance in user turn, reset predictor value
-            if len(self.stt_word_buffer) == 0:
-                self.stt_session.pause_predictor.value = 0
+        #     # first utterance in user turn, reset predictor value
+        #     if len(self.stt_word_buffer) == 0:
+        #         self.stt_session.pause_predictor.value = 0
 
-            self.stt_word_buffer.append(message.text)
+        #     self.stt_word_buffer.append(message.text)
 
-        self.node.get_logger().info("STT task finished.")
+        # self.node.get_logger().info("STT task finished.")
+
+     
+        try:
+            self.node.get_logger().info("create stt client")
+            client = AsyncDeepgramClient(api_key=os.getenv("DEEPGRAM_API_KEY"))
+            listening_task = None
+            self.node.get_logger().info("start setting up stt stream before try")
+        # Connect to Flux with auto-detection for streaming audio
+        # SDK automatically connects to: wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000
+            self.node.get_logger().info("start setting up stt stream")
+            async with client.listen.v2.connect(
+                model="flux-general-en",
+                eot_threshold="0.7",
+                eot_timeout_ms="6000",
+
+                encoding="linear32",
+                sample_rate="16000"
+            ) as connection:
+                self.node.get_logger().info("connection setup")
+                # Define message handler function
+
+                def on_message(message: ListenV2SocketClientResponse) -> None:
+
+                    msg_type = getattr(message, "type", "Unknown")
+                    # self.node.get_logger().info(str(message))
+
+                    # Show transcription results
+                    if hasattr(message, 'event') and message.event == "Update" and message.transcript:
+                        self.stt_pulse_publisher.publish(self.create_std_str_msg("bru"))
+
+                    elif hasattr(message, 'event') and message.event == "StartOfTurn":
+                        if self.state == ConversationState.ROBOT_TURN:
+                            self.handle_INTERRUPT_ROBOT()
+                    
+                    elif hasattr(message, 'event') and message.event == "EndOfTurn":
+                        self.node.get_logger().info(f"End turn msg: {str(message)}")
+                        self.stt_word_buffer.append(message.transcript)
+                        self.handle_USER_DONE_SPEAKING()
+
+                    elif msg_type == "Connected":
+                        self.is_stt_ready.set()
+                        print(f"✅ Connected to Deepgram Flux - Ready for audio!")
+
+
+                # Attach the message handler to the connection & start listening to event
+                connection.on(EventType.MESSAGE, on_message)
+                connection.on(EventType.OPEN, lambda _: self.node.get_logger().info("stt connection open"))
+                connection.on(EventType.CLOSE, lambda _: self.node.get_logger().info("Connection closed"))
+                connection.on(EventType.ERROR, lambda error: self.node.get_logger().info(f"Caught: {error}"))
+
+                listening_task = asyncio.create_task(connection.start_listening())
+        
+                while True:
+                    # Get audio data from mic audio queue
+                    audio_data = await self.mic_audio_queue.get()
+                    # Send audio data to Deepgram
+                    await connection._send(audio_data)
+        
+        except asyncio.CancelledError:
+            connection.send_control({"type": "CloseStream"})
+            if listening_task:
+                listening_task.cancel()
+        
+        except Exception as e:
+               self.node.get_logger().info(str(e))
+               self.node.get_logger().info(os.getenv("DEEPGRAM_API_KEY"))
+
+
+        # finally:
+   
+        #     self.is_stt_ready.clear()
 
 
 
@@ -639,8 +678,8 @@ class ConversationManagerDG():
     
     
 rclpy.init()
-node = Node("conversation_manager_2")
-conversation_manager = ConversationManager(node)
+node = Node("conversation_manager_dg")
+conversation_manager = ConversationManagerDG(node)
 
 
 async def ros_loop():

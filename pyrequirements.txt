@@ -20,4 +20,5 @@ python-dotenv
 sounddevice
 resampy
 https
-python-statemachine
+
+deepgram-sdk

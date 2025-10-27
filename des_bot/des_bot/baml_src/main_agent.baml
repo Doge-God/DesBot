@@ -7,10 +7,9 @@ class ReplyTool {
     action_name "reply" @stream.done  @description(#"
         to reply to the user with a message."#)
     response string 
-    mood "happy" | "neutral" | "sad" @description(#"
+    mood "happy" | "neutral" @description(#"
         the mood of the reply, which can be happy, neutral or sad. 
         Use happy when the user is happy or making a positive statement.
-        Use sad when the user is sad or making a negative statement.
         Use neutral otherwise."#)
 }
 

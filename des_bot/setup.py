@@ -26,8 +26,9 @@ setup(
             'naive_track = des_bot.motor_controller:main',
             'naive_face = des_bot.face_controller:main',
             'stt = des_bot.stt:main',
-            'conversation_manager = des_bot.conversation_manager_dg:main',
+            'conversation_manager = des_bot.conversation_manager_2:main',
             'button_handler = des_bot.button_handler:main',
+            'expression_manager = des_bot.expression_manager_lite:main',
 
             'test_sub = des_bot.test_sub:main'
         ],

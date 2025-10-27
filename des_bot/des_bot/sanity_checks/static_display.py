@@ -104,4 +104,4 @@ while True:
 
     with canvas(device_1) as draw:
         device_1.backlight(False)
-        draw_centered_rectangle(draw, 64, 80, 70, 30, '#ffc300', 15)
+        draw_centered_rectangle(draw, 64, 80, 70, 25, '#ffc300', 12)

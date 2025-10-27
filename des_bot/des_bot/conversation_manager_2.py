@@ -9,7 +9,7 @@ from enum import Enum, Flag, auto
 import numpy as np
 from dotenv import load_dotenv
 import sounddevice as sd, time
-from typing import List, Optional, TYPE_CHECKING, get_type_hints
+from typing import Callable, List, Optional, TYPE_CHECKING, get_type_hints
 import math
 import threading
 
@@ -23,9 +23,11 @@ from .baml_client.types import Message, ReplyTool, StopTool, BookActivityTool, S
 from .baml_client import stream_types
 
 from .services.sentence_piece_tts import SentencePieceTts, SentencePiecePoisonPill
-from .utils.conversation_state_types import ConversationState
+from .utils.conversation_state_types import ConversationState, ExpressionState, SpeakingEmote
 
 from des_bot_interfaces.srv import StartConversation, EndConversation
+
+
 
 load_dotenv()
 
@@ -36,7 +38,7 @@ class ConversationManager():
         # handle event loop in seperate thread: don't block ROS spin --------------------------------
         # self._loop = asyncio.new_event_loop()
         # self._loop_thread = threading.Thread(target=self._start_asyncio_loop, daemon=True)
-        self.state_publisher = self.node.create_publisher(String, 'conversation_state', 10)
+        self.expression_state_publisher = self.node.create_publisher(String, 'expression_state', 10)
         # self._loop_thread.start()
 
         # param TODO might be good to use ros param --------------------------------------------------
@@ -91,16 +93,29 @@ class ConversationManager():
     ################################################################################################
     ############## Service Callback & Explicit State Transition ############################################
     def run_conversation_callback(self, _ , response):
-        if self.state != ConversationState.IDLE:
-            self.node.get_logger().warn("Conversation already ongoing, rejecting new request.")
-            response.is_successful = False
+        # if self.state != ConversationState.IDLE:
+        #     self.node.get_logger().warn("Conversation already ongoing, rejecting new request.")
+        #     response.is_successful = False
+        #     return response
+        if self.state == ConversationState.IDLE:
+            response.is_successful = True
+            self.node.get_logger().info("## STARTING NEW CONVERSATION ##")
+            asyncio.gather(self.handle_USER_START_CONVERSATION())
             return response
         
-        response.is_successful = True
-        self.node.get_logger().info("## STARTING NEW CONVERSATION ##")
-        asyncio.gather(self.handle_USER_START_CONVERSATION())
-        return response
-    
+        elif self.state in ConversationState.ROBOT_TURN:
+            response.is_successful = True
+            self.handle_INTERRUPT_ROBOT()
+            self.node.get_logger().info("Manual interrupt robot turn.")
+            return response
+        
+        else: # USER_TURN
+            response.is_successful = True
+            self.finish_user_turn()
+            # self.node.get_logger().warn("Conversation already ongoing in user turn, rejecting new request.")
+            return response
+
+
     def end_conversation_callback(self, _ , response):
         if self.state == ConversationState.IDLE:
             self.node.get_logger().warn("Idle, rejecting end conversation request.")
@@ -117,13 +132,7 @@ class ConversationManager():
         # is not in the process of flushing audio
         if self.end_of_flush_time is None:
             if self.should_transition_user_to_robot():
-                self.node.get_logger().info("Detected user end speech: begin flushing.")
-                # flush stt process on server with blank audio to immediate get last bits of transcription back
-                num_frames = int(math.ceil(0.5 / (0.08))) + 1 # some extra for safety
-                blank_audio = np.zeros(1920, dtype=np.float32)
-                self.end_of_flush_time = self.stt_session.current_time_sec + self.stt_session.delay_sec
-                for _ in range (num_frames):
-                    await self.stt_session.send_audio(blank_audio)
+                await self.finish_user_turn()
             
             elif self.should_interrupt_robot():
                 self.handle_INTERRUPT_ROBOT()
@@ -164,7 +173,7 @@ class ConversationManager():
         self.mic_stream_task = asyncio.create_task(self.run_mic_stream())
 
         self.state = ConversationState.USER_TURN
-        self.state_publisher.publish(self.create_std_str_msg(ConversationState.USER_TURN.name))
+        self.expression_state_publisher.publish(self.create_std_str_msg(ExpressionState.LISTENING.name))
         self.node.get_logger().info("FINISHED HANDLE START CONV STATE CHANGE")
 
     def handle_INTERRUPT_ROBOT(self):
@@ -188,7 +197,7 @@ class ConversationManager():
             self.robot_spoken_buffer.clear()
 
         self.state = ConversationState.USER_TURN
-        self.state_publisher.publish(self.create_std_str_msg(ConversationState.USER_TURN.name))
+        self.expression_state_publisher.publish(self.create_std_str_msg(ExpressionState.LISTENING.name))
 
     def handle_USER_DONE_SPEAKING(self):
         self.node.get_logger().info("## HANDLE USER DONE SPEAKING")
@@ -204,7 +213,7 @@ class ConversationManager():
         # keep time stamp of last user done speaking time
         self.last_user_done_speaking_stamp = self.node.get_clock().now().nanoseconds
         # inform other nodes and log and stuff
-        self.state_publisher.publish(self.create_std_str_msg(ConversationState.ROBOT_PRE.name))
+        self.expression_state_publisher.publish(self.create_std_str_msg(ExpressionState.GENERATING.name))
         self.node.get_logger().info("## DONE: HANDLE USER DONE SPEAKING")
     
     def handle_ROBOT_FINISHED(self):
@@ -215,43 +224,43 @@ class ConversationManager():
         self.node.get_logger().info(f">> Robot turn finished. Enter USER_TURN Message added: [{new_robot_message.content[:20]}...]")
        
         self.state = ConversationState.USER_TURN
-        self.state_publisher.publish(self.create_std_str_msg(ConversationState.USER_TURN.name))
+        self.expression_state_publisher.publish(self.create_std_str_msg(ExpressionState.LISTENING.name))
 
         # TODO start user idle timer task
 
     def handle_ROBOT_REQUEST_TOOL(self, tool_call:BookActivityTool | SuggestActivityTool):
         self.node.get_logger().info("## HANDLE ROBOT TOOLCALLING")
         self.state = ConversationState.ROBOT_TOOL_CALLING
-        self.state_publisher.publish(self.create_std_str_msg(ConversationState.ROBOT_TOOL_CALLING.name))
+        self.expression_state_publisher.publish(self.create_std_str_msg(ExpressionState.TOOL_CALLING.name))
         self.robot_task = asyncio.create_task(self.run_robot_tool_call(tool_call))
 
     def handle_ROBOT_GENERATE_RESPONSE(self):
         self.node.get_logger().info("## HANDLE ROBOT GENERATE RESPONSE")
         self.state = ConversationState.ROBOT_AFT
-        self.state_publisher.publish(self.create_std_str_msg(ConversationState.ROBOT_AFT.name))
+        self.expression_state_publisher.publish(self.create_std_str_msg(ExpressionState.GENERATING.name))
         self.robot_task = asyncio.create_task(self.run_robot_aft())
 
     def handle_ROBOT_FAREWELL(self):
         self.node.get_logger().info("## HANDLE ROBOT FAREWELL")
-        self.state_publisher.publish(self.create_std_str_msg(ConversationState.ROBOT_COUNTDOWN.name))
+        self.expression_state_publisher.publish(self.create_std_str_msg(ExpressionState.GENERATING.name))
         self.state = ConversationState.ROBOT_COUNTDOWN
         self.robot_task = asyncio.create_task(self.run_robot_countdown())
 
     def handle_ROBOT_END_CONVERSATION(self):
         self.node.get_logger().info("## HANDLE ROBOT END CONVERSATION")
-        self.state_publisher.publish(self.create_std_str_msg(ConversationState.CONVERSATION_SHUTDOWN.name))
+        self.expression_state_publisher.publish(self.create_std_str_msg(ExpressionState.IDLE.name))
         self.state = ConversationState.CONVERSATION_SHUTDOWN
         asyncio.create_task(self.run_conversation_shutdown())
     
     def handle_USER_END_CONVERSATION(self):
         self.node.get_logger().info("## HANDLE ROBOT END CONVERSATION")
-        self.state_publisher.publish(self.create_std_str_msg(ConversationState.CONVERSATION_SHUTDOWN.name))
+        self.expression_state_publisher.publish(self.create_std_str_msg(ExpressionState.IDLE.name))
         self.state = ConversationState.CONVERSATION_SHUTDOWN
         asyncio.create_task(self.run_conversation_shutdown())
 
     def handle_RESET_TO_IDLE(self):
         self.node.get_logger().info("## HANDLE RESET TO IDLE")
-        self.state_publisher.publish(self.create_std_str_msg(ConversationState.IDLE.name))
+        self.expression_state_publisher.publish(self.create_std_str_msg(ExpressionState.IDLE.name))
         self.state = ConversationState.IDLE
 
     # UTIL --------------------------------------------------------------------------------------------------
@@ -304,6 +313,7 @@ class ConversationManager():
             channels=1,
             dtype="int16",
             callback=speaker_output_stream_callback,
+            # device=0
         )
         self.speaker_output_stream.start()
         #-------------------------------------------------------------------------
@@ -323,6 +333,17 @@ class ConversationManager():
         t1 = self.node.get_clock().now().nanoseconds
         self.node.get_logger().info(f"Conversation ready. Spend: {(t1-t0)/1e6:.2f} ms")
 
+    async def finish_user_turn(self):
+        if self.end_of_flush_time is None:
+            self.node.get_logger().info("User end speech: begin flushing.")
+            # flush stt process on server with blank audio to immediate get last bits of transcription back
+            num_frames = int(math.ceil(0.5 / (0.08))) + 1 # some extra for safety
+            blank_audio = np.zeros(1920, dtype=np.float32)
+            self.end_of_flush_time = self.stt_session.current_time_sec + self.stt_session.delay_sec
+            for _ in range (num_frames):
+                await self.stt_session.send_audio(blank_audio)
+        else:
+            self.node.get_logger().warn("Finish user turn called but already flushing.")
     ################################################################################################
     ############# ROBOT TASKS ###############################################################  
     async def run_robot_pre(self):
@@ -337,12 +358,21 @@ class ConversationManager():
             self.next_allowed_tts_request_stamp = self.node.get_clock().now().nanoseconds
 
             # process streamed llm response
+            is_first_partials = True
             async for partial in stream:
                 if isinstance(partial,stream_types.ReplyTool):
                     if partial.response:
-                        new_pieces, _ = parser.parse_new_input(partial.response) # IGNORE any final piece from llm not closed by separators 
-                        self.queue_sentence_pieces_to_speak(new_pieces)
-            
+                        new_pieces, remainder = parser.parse_new_input(partial.response)
+                        # make sure expression state changes from generating to speaking
+                        if new_pieces and is_first_partials:
+                            self.queue_sentence_pieces_to_speak(new_pieces, 
+                                                                first_audio_callback=lambda: self.expression_state_publisher.publish(self.create_std_str_msg(ExpressionState.SPEAKING.name)))
+                            is_first_partials = False
+                        else:
+                            self.queue_sentence_pieces_to_speak(new_pieces)
+                       
+            if remainder:
+                self.queue_sentence_pieces_to_speak([remainder])
 
             # llm generation complete, add poinson pill to tts queue to end tts advance loop
             # await generation to be spoken
@@ -533,23 +563,30 @@ class ConversationManager():
             self.current_sentence_piece_tts = None
             print(f"SPOKEN ENTIRE LLM RESPONSE.")            
 
-    def queue_sentence_pieces_to_speak(self, pieces:List[str]):
+    def queue_sentence_pieces_to_speak(self, pieces:List[str], first_audio_callback:Optional[Callable]=None):
         '''Make SentencePieceTts objects from strings and queue them for processing, respects self.next_allowed_tts_request_stamp (should be reset per generation task.)'''   
+        if first_audio_callback:
+            print(">>> Queueing sentence pieces with first audio callback.")
+        is_first_audio = True
+       
         for new_piece in pieces:              
             now_stamp = self.node.get_clock().now().nanoseconds
             # Request NOT allowed immediately: less than specified sec apart from previous request: needed to ensure fastkoko not drowning and degrade first audio time performance
             if now_stamp <= self.next_allowed_tts_request_stamp:
                 delta_sec = (self.next_allowed_tts_request_stamp-now_stamp) / 1_000_000_000
                 self.sentence_piece_tts_queue.put_nowait(
-                    SentencePieceTts(new_piece, self.tts_session, asyncio.get_running_loop(), delta_sec)
+                    SentencePieceTts(new_piece, self.tts_session, asyncio.get_running_loop(), 
+                                     delta_sec, 
+                                     first_spoken_callback = first_audio_callback if is_first_audio and first_audio_callback else None )
                 )
             # Request allowed, start fetching immediatly
             else:
                 self.sentence_piece_tts_queue.put_nowait(
-                    SentencePieceTts(new_piece, self.tts_session, asyncio.get_running_loop() )
+                    SentencePieceTts(new_piece, self.tts_session, asyncio.get_running_loop(),
+                                     first_spoken_callback = first_audio_callback if is_first_audio and first_audio_callback else None )
                 )
             self.next_allowed_tts_request_stamp += self.MIN_TTS_REQUEST_GAP_SEC * 1_000_000_000
-    
+            is_first_audio = False
 
     ################################################################################################
     ############# MIC & STT Tools & tasks ###############################################################  
@@ -574,7 +611,7 @@ class ConversationManager():
 
             with sd.InputStream(
                     samplerate=16000, 
-                    channels=1, 
+                    # channels=1, 
                     blocksize=1920,
                     dtype='float32',
                     callback=audio_callback,

@@ -22,27 +22,14 @@ class ConversationState(Flag):
 
     IN_CONVERSATION = ROBOT_TURN | USER_TURN
 
-class ExtendedRobotState(Flag):
+class ExpressionState(Flag):
     IDLE = auto()
+    GENERATING = auto()
+    TOOL_CALLING = auto()
+    SPEAKING = auto()
+    LISTENING = auto()
+    UNRESPONSIVE_PROCESSING = auto()
 
-    USER_TURN = auto()
-    
-    ROBOT_PRE = auto()
-    '''Processing conversation: can choose tool OR respond/farewell without tool'''
-    ROBOT_TOOL_CALLING = auto()
-    '''Calling tool'''
-    ROBOT_AFT = auto()
-    '''Can only generate response/farewell given tool result. (prevent tool loops)'''
-
-    ROBOT_COUNTDOWN = auto()
-
-    CONVERSATION_SHUTDOWN = auto()
-
-    #-----------------------------------------------
-    ROBOT_TURN = ROBOT_PRE | ROBOT_TOOL_CALLING | ROBOT_AFT | ROBOT_COUNTDOWN
-    #--------------------------------------------------------------------------------------
-    PREPARING = auto()
-    PROCESSING_RESPONSE = auto()
-    SPEAKING_RESONSE = auto()
-
-    EXTENDED_ROBOT_TURN = ROBOT_TURN | PREPARING | PROCESSING_RESPONSE | SPEAKING_RESONSE
+class SpeakingEmote(Flag):
+    NEUTRAL = auto()
+    HAPPY = auto()

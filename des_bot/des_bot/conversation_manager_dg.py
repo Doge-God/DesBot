@@ -260,12 +260,12 @@ class ConversationManagerDG():
 
             current_tts = self.current_sentence_piece_tts
             if not current_tts or current_tts.is_all_audio_consumed.is_set():
-                outdata[:] = b'\x00' * frames*2 #16bit frames: 
+                outdata[:] = b'\x00' * frames*4 #16bit frames: 
                 return
             try:
                 buffered_data = current_tts.force_get_bytes(bytes_needed_for_resample(frames, sr_in=24000, sr_out=16000))
             except RuntimeError as e:
-                outdata[:] = b'\x00' * frames*2 #16bit frames: 
+                outdata[:] = b'\x00' * frames*4#16bit frames: 
                 return
             processed = (
                 OutputAudioProcessorInt16(buffered_data)
@@ -280,6 +280,7 @@ class ConversationManagerDG():
             samplerate=16000,  
             dtype="int16",
             callback=speaker_output_stream_callback,
+            # device = 1
         )
         self.speaker_output_stream.start()
         #-------------------------------------------------------------------------
@@ -298,9 +299,9 @@ class ConversationManagerDG():
 
         t1 = self.node.get_clock().now().nanoseconds
 
-        self.node.get_logger().info("WAITING FOR STT READY...")
-        # wait for stt to be ready
-        await self.is_stt_ready.wait()
+        # self.node.get_logger().info("WAITING FOR STT READY...")
+        # # wait for stt to be ready
+        # await self.is_stt_ready.wait()
 
         self.node.get_logger().info(f"Conversation ready. Spend: {(t1-t0)/1e6:.2f} ms")
 
@@ -611,10 +612,10 @@ class ConversationManagerDG():
                     # self.node.get_logger().info(str(message))
 
                     # Show transcription results
-                    if hasattr(message, 'event') and message.event == "Update" and message.transcript:
-                        self.stt_pulse_publisher.publish(self.create_std_str_msg("bru"))
+                    # if hasattr(message, 'event') and message.event == "Update" and message.transcript:
+                    #     self.stt_pulse_publisher.publish(self.create_std_str_msg("bru"))
 
-                    elif hasattr(message, 'event') and message.event == "StartOfTurn":
+                    if hasattr(message, 'event') and message.event == "StartOfTurn":
                         if self.state == ConversationState.ROBOT_TURN:
                             self.handle_INTERRUPT_ROBOT()
                     

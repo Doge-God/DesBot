@@ -1,3 +1,4 @@
+from typing import Callable, Optional
 import aiohttp
 import asyncio
 import sounddevice as time
@@ -6,7 +7,10 @@ class SentencePiecePoisonPill:
     pass
 
 class SentencePieceTts:
-    def __init__(self, text: str, session: aiohttp.ClientSession, loop:asyncio.AbstractEventLoop, init_wait=0.0,base_url="http://192.168.137.1:8880"):
+    def __init__(self, text: str, session: aiohttp.ClientSession, 
+                 loop:asyncio.AbstractEventLoop, 
+                 init_wait=0.0,base_url="http://192.168.137.1:8880",
+                 first_spoken_callback:Optional[Callable]=None):
         self.text = text
         self.session = session
         self.audio_buffer = b""
@@ -15,6 +19,10 @@ class SentencePieceTts:
         self.loop = loop
         self.init_wait = init_wait
         self.base_url = base_url
+
+        # Callback when first audio is spoken, mostly for expression generation sync
+        self.first_spoken_callback = first_spoken_callback
+        self.is_first_spoken_callback_called = False
 
         self.fetch_task = asyncio.run_coroutine_threadsafe(self._fetch(), self.loop)
 
@@ -56,6 +64,11 @@ class SentencePieceTts:
 
     def force_get_bytes(self, samples_required:int):
         '''Get x samples, indicate if all audio generated is emptied with this read.'''
+        # Call first spoken callback if not yet called
+        if self.first_spoken_callback and (not self.is_first_spoken_callback_called):
+            self.is_first_spoken_callback_called = True
+            self.first_spoken_callback()
+        
         if len(self.audio_buffer) < samples_required:
             # Not enough samples, return what we have and pad with zeros
             result = self.audio_buffer
@@ -69,7 +82,6 @@ class SentencePieceTts:
                 self.loop.call_soon_threadsafe(
                     self.is_all_audio_consumed.set
                 )
-    
                 # print(f"# CONSUMED ALL AUDIO: [{self.text[:20]}..]")
 
             return result + padding
